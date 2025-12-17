@@ -29,11 +29,11 @@ public class Schedule extends AuditEntity {
     @Column(name = "end_time", nullable = false)
     private LocalTime endTime;
 
-    @Column(name = "address")
+    @Column(name = "address",length = 500)
     private String address;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "event_id", nullable = false)
+    @JoinColumn(name = "event_id", nullable = false, foreignKey = @ForeignKey(name = "fk_schedule_event"))
     private Event event;
 
 

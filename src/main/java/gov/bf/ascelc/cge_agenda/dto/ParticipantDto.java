@@ -2,13 +2,16 @@ package gov.bf.ascelc.cge_agenda.dto;
 
 import gov.bf.ascelc.cge_agenda.abstracts.AuditEntityDto;
 import gov.bf.ascelc.cge_agenda.enums.ParticipantType;
-import jakarta.persistence.Column;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
+
+import java.util.UUID;
 
 @AllArgsConstructor
 @NoArgsConstructor
@@ -24,6 +27,7 @@ public class ParticipantDto extends AuditEntityDto {
     private String firstName;
 
     @NotBlank(message = "L'email est obligatoire")
+    @Email(message = "Format d'email invalide")
     private String email;
 
     private String  phoneNumber;
@@ -33,5 +37,10 @@ public class ParticipantDto extends AuditEntityDto {
     private String  organization;
 
     private ParticipantType typeParticipant;
+    @NotNull(message = "Le type de participant est obligatoire")
+    private ParticipantType participantType;
+
+    @NotNull(message = "L'ID de l'événement est obligatoire")
+    private UUID eventId;
 
 }

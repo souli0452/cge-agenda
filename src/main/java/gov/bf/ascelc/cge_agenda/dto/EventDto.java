@@ -37,8 +37,10 @@ public class EventDto extends AuditEntityDto {
     @NotNull(message = "La date de fin est obligatoire")
     private LocalDate endDate;
 
+    @Size(max = 500, message = "Le lien ne peut pas dépasser 500 caractères")
     private String meetingLink;
 
+    @Size(max = 100, message = "Le nom du pays ne peut pas dépasser 100 caractères")
     private String pays;
 
 
