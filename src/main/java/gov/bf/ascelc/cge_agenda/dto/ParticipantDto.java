@@ -18,17 +18,17 @@ import lombok.experimental.SuperBuilder;
 public class ParticipantDto extends AuditEntityDto {
 
     @NotBlank(message = "Le nom est obligatoire")
-    private String last_name;
+    private String lastName;
 
     @NotBlank(message = "Le prénom est obligatoire")
-    private String first_name;
+    private String firstName;
 
     @NotBlank(message = "L'email est obligatoire")
     private String email;
 
-    private String  phone_number;
+    private String  phoneNumber;
 
-    private String  job_title;
+    private String  jobTitle;
 
     private String  organization;
 

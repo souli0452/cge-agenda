@@ -21,13 +21,13 @@ import java.time.LocalTime;
 public class Schedule extends AuditEntity {
 
     @Column(name = "dateJour", nullable = false)
-    private LocalDate DateJour;
+    private LocalDate dateJour;
 
     @Column(name = "start_time", nullable = false)
-    private LocalTime start_time;
+    private LocalTime startTime;
 
     @Column(name = "end_time", nullable = false)
-    private LocalTime end_time;
+    private LocalTime endTime;
 
     @Column(name = "address")
     private String address;

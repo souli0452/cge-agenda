@@ -6,6 +6,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.io.Serial;
@@ -18,7 +20,7 @@ import java.util.UUID;
 @SuperBuilder
 @MappedSuperclass
 @NoArgsConstructor
-//@EntityListeners(AuditingEntityListener.class)
+@EntityListeners(AuditingEntityListener.class)
 public abstract class AuditEntity implements Serializable {
 
     @Serial
@@ -27,14 +29,14 @@ public abstract class AuditEntity implements Serializable {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-
+    @CreatedDate
     @Column(name = "created_at")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "dd-MM-yyyy' 'HH:mm:ss")
     private LocalDateTime createdAt;
-
-    @Column(name = "update_at")
+    @LastModifiedDate
+    @Column(name = "updated_at")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "dd-MM-yyyy' 'HH:mm:ss")
-    private LocalDateTime UpdateAt;
+    private LocalDateTime UpdatedAt;
 
     @Column(name = "created_by_id")
     private String createdById;
@@ -42,11 +44,11 @@ public abstract class AuditEntity implements Serializable {
     @Column(name = "update_by_id")
     private String updateById;
 
-    @Column(name = "current_user_firts_name")
-    private String currenFirstName;
+    @Column(name = "current_user_first_name")
+    private String currentFirstName;
 
     @Column(name = "current_user_last_name")
-    private String currenLastName;
+    private String currentLastName;
 
     @Column(name = "current_user_email")
     private String currentUserEmail;

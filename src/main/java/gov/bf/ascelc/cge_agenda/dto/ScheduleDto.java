@@ -16,11 +16,11 @@ import java.time.LocalTime;
 @Setter
 public class ScheduleDto extends AuditEntityDto {
 
-    private LocalDate DateJour;
+    private LocalDate dateJour;
 
-    private LocalTime start_time;
+    private LocalTime startTime;
 
-    private LocalTime end_time;
+    private LocalTime endTime;
 
     private String address;
 }

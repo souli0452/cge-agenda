@@ -3,7 +3,9 @@ package gov.bf.ascelc.cge_agenda.dto;
 import gov.bf.ascelc.cge_agenda.abstracts.AuditEntityDto;
 import gov.bf.ascelc.cge_agenda.enums.EventStatus;
 import gov.bf.ascelc.cge_agenda.enums.EventType;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -23,28 +25,31 @@ import java.util.UUID;
 @Setter
 public class EventDto extends AuditEntityDto {
 
+    @NotBlank(message = "Le titre est obligatoire")
+    @Size(max = 255, message = "Le titre ne peut pas dépasser 255 caractères")
     private String title;
 
     private String description;
 
+    @NotNull(message = "La date de début est obligatoire")
     private LocalDate startDate;
 
+    @NotNull(message = "La date de fin est obligatoire")
     private LocalDate endDate;
 
     private String meetingLink;
 
     private String pays;
 
-    private UUID eventId;
 
     @NotNull(message = "Le statut est obligatoire")
-    private EventStatus statut;
+    private EventStatus status;
 
     @NotNull(message = "Le Type est obligatoire")
     private EventType type;
 
     // Liste des horaires
-    private List<ScheduleDto> horaires = new ArrayList<>();
+    private List<ScheduleDto> schedule = new ArrayList<>();
 
     // Liste des participants (IDs seulement pour la création/modification)
     private List<UUID> participantIds = new ArrayList<>();

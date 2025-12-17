@@ -22,19 +22,19 @@ import java.util.Set;
 
 public class Participant extends AuditEntity{
 
-    @Column(name = "last_name", nullable = false)
+    @Column(name = "lastName", nullable = false)
     private String last_name;
 
-    @Column(name = "first_name", nullable = false)
+    @Column(name = "firstName", nullable = false)
     private String first_name;
 
     @Column(name = "email", nullable = false)
     private String email;
 
-    @Column(name = "phone_number")
+    @Column(name = "phoneNumber")
     private String  phone_number;
 
-    @Column(name = "job_title")
+    @Column(name = "jobTitle")
     private String  job_title;
 
     @Column(name = "organization")
