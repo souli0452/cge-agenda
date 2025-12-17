@@ -44,6 +44,8 @@ public class Participant extends AuditEntity{
     @Column(name = "participantType", nullable = false)
     private ParticipantType participantType;
 
-    @OneToMany(mappedBy = "participant", cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<ParticipantEvent> ParticipantEvents = new HashSet<>();
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "event_id", nullable = false, foreignKey = @ForeignKey(name = "fk_participant_event"))
+    private Event event;
+
 }

@@ -54,10 +54,12 @@ public class Event extends AuditEntity {
     private Set<Schedule> schedules = new HashSet<>();
 
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<ParticipantEvent> participantEvents = new HashSet<>();
+    private Set<File> files = new HashSet<>();
 
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<File> files = new HashSet<>();
+    private Set<Participant> participants = new HashSet<>();
+
+
 
     /**
      * Méthode utilitaire pour vérifier si l'événement est multi-jours

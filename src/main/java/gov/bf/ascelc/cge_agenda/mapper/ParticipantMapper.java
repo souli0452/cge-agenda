@@ -1,9 +1,7 @@
 package gov.bf.ascelc.cge_agenda.mapper;
 
 import gov.bf.ascelc.cge_agenda.dto.ParticipantDto;
-import gov.bf.ascelc.cge_agenda.dto.ParticipantEventDto;
 import gov.bf.ascelc.cge_agenda.entities.Participant;
-import gov.bf.ascelc.cge_agenda.entities.ParticipantEvent;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
