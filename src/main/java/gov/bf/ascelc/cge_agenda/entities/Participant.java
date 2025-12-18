@@ -50,7 +50,7 @@ public class Participant extends AuditEntity {
      * Un participant appartient à UN SEUL événement
      */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "event_id", nullable = false, foreignKey = @ForeignKey(name = "fk_participant_event"))
+    @JoinColumn(name = "event_id", nullable = true, foreignKey = @ForeignKey(name = "fk_participant_event"))
     private Event event;
 
     /**
