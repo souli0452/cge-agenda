@@ -36,7 +36,7 @@ public class Event extends AuditEntity {
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
-    @Column(name = "meetingLink")
+    @Column(name = "meeting_link", length = 500)
     private String meetingLink;
 
     @Column(name = "pays")

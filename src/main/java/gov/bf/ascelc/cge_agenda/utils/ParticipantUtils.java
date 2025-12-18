@@ -21,8 +21,8 @@ public class ParticipantUtils {
         if (participant == null) {
             return "";
         }
-        String firstName = participant.getFirstName() != null ? participant.getFirstName() : "";
-        String lastName = participant.getLastName() != null ? participant.getLastName() : "";
+        String firstName = participant.getCurrentFirstName() != null ? participant.getCurrentFirstName() : "";
+        String lastName = participant.getCurrentLastName() != null ? participant.getCurrentLastName() : "";
         return (firstName + " " + lastName).trim();
     }
 
@@ -33,8 +33,8 @@ public class ParticipantUtils {
         if (participant == null) {
             return "";
         }
-        String firstName = participant.getFirstName() != null ? participant.getFirstName() : "";
-        String lastName = participant.getLastName() != null ? participant.getLastName() : "";
+        String firstName = participant.getCurrentFirstName() != null ? participant.getCurrentFirstName() : "";
+        String lastName = participant.getCurrentLastName() != null ? participant.getCurrentLastName() : "";
         return (lastName + ", " + firstName).trim();
     }
 

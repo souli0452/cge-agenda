@@ -51,7 +51,7 @@ public class EventDto extends AuditEntityDto {
     private EventType type;
 
     // Liste des horaires
-    private List<ScheduleDto> schedule = new ArrayList<>();
+    private List<ScheduleDto> schedules = new ArrayList<>();
 
     // Liste des participants (IDs seulement pour la création/modification)
     private List<UUID> participantIds = new ArrayList<>();

@@ -21,10 +21,10 @@ import java.util.UUID;
 public class ParticipantDto extends AuditEntityDto {
 
     @NotBlank(message = "Le nom est obligatoire")
-    private String lastName;
+    private String currentLastName;
 
     @NotBlank(message = "Le prénom est obligatoire")
-    private String firstName;
+    private String currentFirstName;;
 
     @NotBlank(message = "L'email est obligatoire")
     @Email(message = "Format d'email invalide")
@@ -36,7 +36,6 @@ public class ParticipantDto extends AuditEntityDto {
 
     private String  organization;
 
-    private ParticipantType typeParticipant;
     @NotNull(message = "Le type de participant est obligatoire")
     private ParticipantType participantType;
 

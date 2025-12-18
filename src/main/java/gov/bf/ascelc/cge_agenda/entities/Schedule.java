@@ -20,7 +20,7 @@ import java.time.LocalTime;
 @Table(name = "schedule")
 public class Schedule extends AuditEntity {
 
-    @Column(name = "dateJour", nullable = false)
+    @Column(name = "date_jour", nullable = false)
     private LocalDate dateJour;
 
     @Column(name = "start_time", nullable = false)
