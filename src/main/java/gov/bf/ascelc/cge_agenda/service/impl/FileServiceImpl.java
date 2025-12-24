@@ -6,6 +6,7 @@ import gov.bf.ascelc.cge_agenda.entities.File;
 import gov.bf.ascelc.cge_agenda.mapper.FileMapper;
 import gov.bf.ascelc.cge_agenda.repository.EventRepository;
 import gov.bf.ascelc.cge_agenda.repository.FileRepository;
+import gov.bf.ascelc.cge_agenda.service.EmailService;
 import gov.bf.ascelc.cge_agenda.service.FileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +39,7 @@ public class FileServiceImpl implements FileService {
     private final FileRepository fileRepository;
     private final EventRepository eventRepository;
     private final FileMapper fileMapper;
+    private final EmailService emailService;  // ✅ AJOUTÉ
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -89,9 +91,9 @@ public class FileServiceImpl implements FileService {
 
             // Copier le fichier
             Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
+
             File fileEntity = File.builder()
-                    .fileName(originalFilename)  //
-                    // Nom original pour affichage
+                    .fileName(originalFilename)  // Nom original pour affichage
                     .filePath(targetLocation.toString())  // Chemin complet avec nom nettoyé
                     .fileType(file.getContentType())
                     .fileSize(file.getSize())
@@ -102,6 +104,15 @@ public class FileServiceImpl implements FileService {
 
             fileEntity = fileRepository.save(fileEntity);
             log.info("Fichier uploadé : {} → {}", originalFilename, storedFilename);
+
+            // ✅ ENVOYER LA NOTIFICATION EMAIL
+            try {
+                emailService.sendNewDocumentNotification(event, fileEntity);
+                log.info("Notification email envoyée pour le fichier : {}", originalFilename);
+            } catch (Exception e) {
+                log.error("Erreur lors de l'envoi de la notification email : {}", e.getMessage());
+                // Ne pas bloquer l'upload si l'email échoue
+            }
 
             return fileMapper.toDto(fileEntity);
 

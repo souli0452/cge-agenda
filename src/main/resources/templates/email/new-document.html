@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nouveau document</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            border-bottom: 3px solid #228B22;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .header h2 {
+            color: #228B22;
+            margin: 10px 0;
+        }
+        .logo {
+            max-width: 150px;
+            height: auto;
+            margin-bottom: 15px;
+        }
+        .alert-info {
+            background-color: #90EE90;
+            border-left: 4px solid #228B22;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .alert-info h3 {
+            color: #228B22;
+            margin-top: 0;
+        }
+        .document-info {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 2px solid #90EE90;
+        }
+        .document-info h3 {
+            color: #228B22;
+            margin-top: 0;
+        }
+        .detail-row {
+            padding: 10px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: bold;
+            color: #228B22;
+            display: inline-block;
+            width: 150px;
+        }
+        .file-icon {
+            font-size: 48px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #228B22;
+            color: #6c757d;
+            font-size: 12px;
+        }
+        .footer strong {
+            color: #228B22;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 30px;
+            background-color: #228B22;
+            color: white !important;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .button:hover {
+            background-color: #1a6b1a;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <img th:src="'cid:logo'" alt="Logo ASCELC" class="logo">
+        <h2>📎 Nouveau Document Ajouté</h2>
+        <p style="color: #228B22; font-style: italic;">Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
+    </div>
+
+    <div class="alert-info">
+        <h3>✅ Document disponible</h3>
+        <p>Un nouveau document a été ajouté à l'événement <strong th:text="${event.title}"></strong>.</p>
+        <p style="margin: 0; font-size: 14px;">Vous pouvez le consulter dès maintenant.</p>
+    </div>
+
+    <div class="file-icon">📄</div>
+
+    <div class="document-info">
+        <h3>📋 Détails du document</h3>
+
+        <div class="detail-row">
+            <span class="detail-label">Nom du fichier :</span>
+            <span th:text="${file.fileName}"></span>
+        </div>
+
+        <div class="detail-row">
+            <span class="detail-label">Type :</span>
+            <span th:text="${file.fileType}"></span>
+        </div>
+
+        <div class="detail-row" th:if="${file.fileSize}">
+            <span class="detail-label">Taille :</span>
+            <span th:text="${#numbers.formatDecimal(file.fileSize / 1024, 1, 2)} + ' KB'"></span>
+        </div>
+
+        <div class="detail-row" th:if="${file.description}">
+            <span class="detail-label">Description :</span>
+            <p th:text="${file.description}" style="margin: 10px 0 0 0;"></p>
+        </div>
+
+        <div class="detail-row">
+            <span class="detail-label">Événement :</span>
+            <span th:text="${event.title}"></span>
+        </div>
+
+        <div class="detail-row">
+            <span class="detail-label">Date d'ajout :</span>
+            <span th:text="${#temporals.format(file.createdAt, 'dd/MM/yyyy à HH:mm')}"></span>
+        </div>
+    </div>
+
+    <div style="text-align: center;">
+        <a th:href="'http://localhost:8081/api/v1/cge-agenda/file/download/' + ${file.id}"
+           class="button"
+           target="_blank">
+            📥 Télécharger le document
+        </a>
+    </div>
+
+    <!-- Lien vers l'événement -->
+    <div style="text-align: center; margin-top: 10px;">
+        <a th:href="'http://localhost:8081/api/v1/cge-agenda/event/' + ${event.id}"
+           style="color: #228B22; text-decoration: underline; font-size: 14px;"
+           target="_blank">
+            Voir l'événement complet
+        </a>
+    </div>
+
+    <div class="footer">
+        <p><strong>CGE Agenda - ASCELC</strong></p>
+        <p>Ceci est un email automatique, merci de ne pas y répondre.</p>
+        <p>Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
+        <p>Burkina Faso</p>
+    </div>
+</div>
+</body>
+</html>

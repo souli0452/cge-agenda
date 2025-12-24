@@ -2,9 +2,9 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Modification d'événement</title>
     <style>
-        /* Même style que reminder.html */
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             line-height: 1.6;
@@ -20,31 +20,157 @@
             padding: 30px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
+        .header {
+            text-align: center;
+            border-bottom: 3px solid #DC143C;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .header h2 {
+            color: #DC143C;
+            margin: 10px 0;
+        }
+        .logo {
+            max-width: 150px;
+            height: auto;
+            margin-bottom: 15px;
+        }
         .alert-warning {
-            background-color: #fff3cd;
-            border-left: 4px solid #ffc107;
+            background-color: #FFB6C1;
+            border-left: 4px solid #DC143C;
             padding: 15px;
             margin: 20px 0;
             border-radius: 5px;
         }
-        /* ... autres styles ... */
+        .alert-warning h3 {
+            color: #DC143C;
+            margin-top: 0;
+        }
+        .event-details {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 2px solid #FFB6C1;
+        }
+        .event-details h3 {
+            color: #DC143C;
+            margin-top: 0;
+        }
+        .detail-row {
+            padding: 10px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: bold;
+            color: #DC143C;
+            display: inline-block;
+            width: 150px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #DC143C;
+            color: #6c757d;
+            font-size: 12px;
+        }
+        .footer strong {
+            color: #DC143C;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 30px;
+            background-color: #DC143C;
+            color: white !important;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .button:hover {
+            background-color: #b01030;
+        }
     </style>
 </head>
 <body>
 <div class="container">
-    <h2>⚠️ Modification d'événement</h2>
-
-    <div class="alert-warning">
-        <p><strong>L'événement suivant a été modifié :</strong></p>
-        <p th:text="${event.title}"></p>
+    <div class="header">
+        <img th:src="'cid:logo'" alt="Logo ASCELC" class="logo">
+        <h2>⚠️ Modification d'Événement</h2>
+        <p style="color: #DC143C; font-style: italic;">Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
     </div>
 
-    <p>Veuillez prendre note des modifications apportées.</p>
+    <div class="alert-warning">
+        <h3>📝 Événement modifié</h3>
+        <p><strong>L'événement suivant a été modifié :</strong></p>
+        <p style="font-size: 18px; font-weight: bold; margin: 10px 0;" th:text="${event.title}"></p>
+        <p style="margin: 0; font-size: 14px;">Veuillez prendre note des changements apportés.</p>
+    </div>
 
-    <!-- Détails... -->
+    <div class="event-details">
+        <h3>📋 Nouvelles informations</h3>
+
+        <div class="detail-row">
+            <span class="detail-label">Titre :</span>
+            <span th:text="${event.title}"></span>
+        </div>
+
+        <div class="detail-row">
+            <span class="detail-label">Type :</span>
+            <span th:text="${event.type.label}"></span>
+        </div>
+
+        <div class="detail-row">
+            <span class="detail-label">Statut :</span>
+            <span th:text="${event.status}"></span>
+        </div>
+
+        <div class="detail-row">
+            <span class="detail-label">Date début :</span>
+            <span th:text="${#temporals.format(event.startDate, 'dd/MM/yyyy')}"></span>
+        </div>
+
+        <div class="detail-row">
+            <span class="detail-label">Date fin :</span>
+            <span th:text="${#temporals.format(event.endDate, 'dd/MM/yyyy')}"></span>
+        </div>
+
+        <div class="detail-row" th:if="${event.meetingLink}">
+            <span class="detail-label">Lien visio :</span>
+            <a th:href="${event.meetingLink}"
+               th:text="${event.meetingLink}"
+               style="color: #DC143C; text-decoration: underline;"
+               target="_blank"></a>
+        </div>
+
+        <div class="detail-row" th:if="${event.description}">
+            <span class="detail-label">Description :</span>
+            <p th:text="${event.description}" style="margin: 10px 0 0 0;"></p>
+        </div>
+    </div>
+
+    <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0;">
+        <p style="margin: 0; font-weight: bold;">⚡ Action requise</p>
+        <p style="margin: 5px 0 0 0;">Merci de mettre à jour votre agenda personnel en conséquence.</p>
+    </div>
+
+    <div style="text-align: center;">
+        <a th:href="'http://localhost:8081/api/v1/cge-agenda/event/' + ${event.id}"
+           class="button"
+           target="_blank">
+            📄 Consulter les détails
+        </a>
+    </div>
 
     <div class="footer">
-        <p>CGE - Agenda | ASCELC</p>
+        <p><strong>CGE Agenda - ASCELC</strong></p>
+        <p>Ceci est un email automatique, merci de ne pas y répondre.</p>
+        <p>Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
+        <p>Burkina Faso</p>
     </div>
 </div>
 </body>
