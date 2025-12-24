@@ -13,8 +13,10 @@ import java.util.List;
 @Mapper(componentModel = "spring")
 public interface ScheduleMapper {
 
+    @Mapping(source = "event.id",target = "eventId")
     ScheduleDto toDto(Schedule schedule);
 
+    @Mapping(target = "event", ignore = true)
     Schedule toEntity(ScheduleDto scheduleDto);
 
     List<ScheduleDto> toDtos(List<Schedule> schedules);
@@ -22,5 +24,6 @@ public interface ScheduleMapper {
     List<Schedule> toEntities(List<ScheduleDto> scheduleDtos);
 
     @Mapping(target = "id", ignore = true)
+    @Mapping(target = "event", ignore = true)
     void updateEntityFromDto(ScheduleDto scheduleDto, @MappingTarget Schedule schedule);
 }

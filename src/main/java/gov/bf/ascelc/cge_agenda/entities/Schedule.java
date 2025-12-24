@@ -17,7 +17,10 @@ import java.time.LocalTime;
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "schedule")
+@Table(name = "schedule", indexes = {
+        @Index(name = "idx_schedule_event", columnList = "event_id"),
+        @Index(name = "idx_schedule_date", columnList = "date_jour")
+})
 public class Schedule extends AuditEntity {
 
     @Column(name = "date_jour", nullable = false)

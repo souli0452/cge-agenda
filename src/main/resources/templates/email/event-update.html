@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Modification d'événement</title>
+    <style>
+        /* Même style que reminder.html */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .alert-warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        /* ... autres styles ... */
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>⚠️ Modification d'événement</h2>
+
+    <div class="alert-warning">
+        <p><strong>L'événement suivant a été modifié :</strong></p>
+        <p th:text="${event.title}"></p>
+    </div>
+
+    <p>Veuillez prendre note des modifications apportées.</p>
+
+    <!-- Détails... -->
+
+    <div class="footer">
+        <p>CGE - Agenda | ASCELC</p>
+    </div>
+</div>
+</body>
+</html>

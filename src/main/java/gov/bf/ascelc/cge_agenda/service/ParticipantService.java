@@ -13,4 +13,5 @@ public interface ParticipantService {
     ParticipantDto findById(UUID id);
     void delete(UUID id);
     List<ParticipantDto> findByType(ParticipantType type);
+    List<ParticipantDto> searchByName(String search);
 }

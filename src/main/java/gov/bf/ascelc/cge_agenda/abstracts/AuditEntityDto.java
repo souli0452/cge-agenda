@@ -21,7 +21,7 @@ public abstract class AuditEntityDto {
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "dd-MM-yyyy' à 'HH:mm:ss")
     private LocalDateTime createdAt;
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "dd-MM-yyyy' à 'HH:mm:ss")
-    private LocalDateTime UpdatedAt;
+    private LocalDateTime updatedAt;
     private String createdById;
     private String updatedById;
     private String currentFirstName;

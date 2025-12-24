@@ -5,10 +5,7 @@ import gov.bf.ascelc.cge_agenda.enums.EventStatus;
 import gov.bf.ascelc.cge_agenda.enums.EventType;
 import gov.bf.ascelc.cge_agenda.utils.EventUtils;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDate;
@@ -55,6 +52,7 @@ public class Event extends AuditEntity {
      * Un événement peut avoir plusieurs horaires
      */
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
     private Set<Schedule> schedules = new HashSet<>();
 
     /**
@@ -62,18 +60,12 @@ public class Event extends AuditEntity {
      * Un événement peut avoir plusieurs fichiers
      */
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
     private Set<File> files = new HashSet<>();
 
-    /**
-     * Relation One-to-Many avec Participant
-     * Un événement peut avoir plusieurs participants
-     * Chaque participant appartient à UN SEUL événement
-     */
-
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<Participant> participants = new HashSet<>();
-
-
+    @Builder.Default
+    private Set<ParticipantEvent> participantEvents = new HashSet<>();
 
     /**
      * Vérifie si l'événement est multi-jours
@@ -123,16 +115,6 @@ public class Event extends AuditEntity {
         return EventUtils.isEventUpcoming(this);
     }
 
-    public void addParticipant(Participant participant) {
-        participants.add(participant);
-        participant.setEvent(this);
-    }
-
-    public void removeParticipant(Participant participant) {
-        participants.remove(participant);
-        participant.setEvent(null);
-    }
-
     public void addSchedule(Schedule schedule) {
         schedules.add(schedule);
         schedule.setEvent(this);
@@ -152,4 +134,5 @@ public class Event extends AuditEntity {
         files.remove(file);
         file.setEvent(null);
     }
+
 }

@@ -12,14 +12,13 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.UUID;
 
-@AllArgsConstructor
-@NoArgsConstructor
-@SuperBuilder
 @Getter
 @Setter
-public class ScheduleDto extends AuditEntityDto {
-
-    @NotNull(message = "La date du jour est obligatoire")
+@SuperBuilder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ScheduleDto  extends AuditEntityDto {
+    @NotNull(message = "La date est obligatoire")
     private LocalDate dateJour;
 
     @NotNull(message = "L'heure de début est obligatoire")
@@ -30,6 +29,5 @@ public class ScheduleDto extends AuditEntityDto {
 
     private String address;
 
-    @NotNull(message = "L'ID de l'événement est obligatoire")
     private UUID eventId;
 }

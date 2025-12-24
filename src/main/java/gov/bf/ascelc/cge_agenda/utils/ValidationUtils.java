@@ -5,32 +5,8 @@ import java.time.LocalTime;
 import java.util.regex.Pattern;
 
 public class ValidationUtils {
-    private static final Pattern EMAIL_PATTERN =
-            Pattern.compile("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
-
-    private static final Pattern PHONE_PATTERN =
-            Pattern.compile("^\\+?[0-9\\s-]{8,}$");
-
-    private ValidationUtils() {
-        // Constructeur privé
-    }
-
     /**
-     * Valide un email
-     */
-    public static boolean isValidEmail(String email) {
-        return email != null && EMAIL_PATTERN.matcher(email).matches();
-    }
-
-    /**
-     * Valide un numéro de téléphone
-     */
-    public static boolean isValidPhoneNumber(String phone) {
-        return phone != null && PHONE_PATTERN.matcher(phone).matches();
-    }
-
-    /**
-     * Valide que la date de fin est >= date de début
+     * Vérifie qu'une plage de dates est valide
      */
     public static boolean isValidDateRange(LocalDate startDate, LocalDate endDate) {
         if (startDate == null || endDate == null) {
@@ -40,7 +16,7 @@ public class ValidationUtils {
     }
 
     /**
-     * Valide que l'heure de fin est > heure de début
+     * Vérifie qu'une plage horaire est valide
      */
     public static boolean isValidTimeRange(LocalTime startTime, LocalTime endTime) {
         if (startTime == null || endTime == null) {
@@ -50,19 +26,21 @@ public class ValidationUtils {
     }
 
     /**
-     * Valide qu'une chaîne n'est pas vide
+     * Vérifie qu'un email est valide (validation simple)
      */
-    public static boolean isNotBlank(String str) {
-        return str != null && !str.trim().isEmpty();
+    public static boolean isValidEmail(String email) {
+        if (email == null || email.trim().isEmpty()) {
+            return false;
+        }
+        String emailRegex = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}$";
+        Pattern pattern = Pattern.compile(emailRegex);
+        return pattern.matcher(email).matches();
     }
 
     /**
-     * Valide qu'une URL est bien formée
+     * Vérifie qu'une chaîne n'est pas vide après trim
      */
-    public static boolean isValidUrl(String url) {
-        if (url == null || url.isBlank()) {
-            return true; // URL optionnelle
-        }
-        return url.startsWith("http://") || url.startsWith("https://");
+    public static boolean isNotBlank(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 }

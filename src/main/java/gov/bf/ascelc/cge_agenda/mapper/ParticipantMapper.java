@@ -13,6 +13,7 @@ public interface ParticipantMapper {
 
     ParticipantDto toDto(Participant participant);
 
+    @Mapping(target = "participantEvents", ignore = true)
     Participant toEntity(ParticipantDto participantDto);
 
     List<ParticipantDto> toDtos(List<Participant> participants);
@@ -20,5 +21,6 @@ public interface ParticipantMapper {
     List<Participant> toEntities(List<ParticipantDto> participantDtos);
 
     @Mapping(target = "id", ignore = true)
+    @Mapping(target = "participantEvents", ignore = true)
     void updateEntityFromDto(ParticipantDto participantDto, @MappingTarget Participant participant);
 }

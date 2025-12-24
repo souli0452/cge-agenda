@@ -4,10 +4,7 @@ import gov.bf.ascelc.cge_agenda.abstracts.AuditEntity;
 import gov.bf.ascelc.cge_agenda.enums.ParticipantType;
 import gov.bf.ascelc.cge_agenda.utils.ParticipantUtils;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 import java.util.HashSet;
@@ -19,15 +16,18 @@ import java.util.Set;
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "participant")
+@Table(name = "participant", indexes = {
+        @Index(name = "idx_participant_email", columnList = "email"),
+        @Index(name = "idx_participant_type", columnList = "participant_type")
+})
 
 public class Participant extends AuditEntity {
 
     @Column(name = "last_name", nullable = false, length = 100)
-    private String currentLastName;
+    private String lastName;
 
     @Column(name = "first_name", nullable = false, length = 100)
-    private String currentFirstName;
+    private String firstName;
 
     @Column(name = "email", nullable = false, length = 255)
     private String email;
@@ -45,13 +45,10 @@ public class Participant extends AuditEntity {
     @Column(name = "participant_type", nullable = false, length = 50)
     private ParticipantType participantType;
 
-    /**
-     * Relation Many-to-One avec Event
-     * Un participant appartient à UN SEUL événement
-     */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "event_id", nullable = true, foreignKey = @ForeignKey(name = "fk_participant_event"))
-    private Event event;
+    @OneToMany(mappedBy = "participant", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private Set<ParticipantEvent> participantEvents = new HashSet<>();
+
 
     /**
      * Obtient le nom complet du participant

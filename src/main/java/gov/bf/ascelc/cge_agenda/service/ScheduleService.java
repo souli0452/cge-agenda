@@ -7,6 +7,7 @@ import java.util.UUID;
 
 public interface ScheduleService {
     ScheduleDto create(ScheduleDto dto);
+    ScheduleDto update(ScheduleDto dto);
     List<ScheduleDto> findByEventId(UUID eventId);
     void delete(UUID id);
 }

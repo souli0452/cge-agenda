@@ -36,13 +36,13 @@ public abstract class AuditEntity implements Serializable {
     @LastModifiedDate
     @Column(name = "updated_at")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "dd-MM-yyyy' 'HH:mm:ss")
-    private LocalDateTime UpdatedAt;
+    private LocalDateTime updatedAt;
 
     @Column(name = "created_by_id")
     private String createdById;
 
-    @Column(name = "update_by_id")
-    private String updateById;
+    @Column(name = "updated_by_id")
+    private String updatedById;
 
     @Column(name = "current_user_first_name")
     private String currentFirstName;

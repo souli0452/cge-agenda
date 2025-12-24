@@ -11,21 +11,25 @@ import lombok.experimental.SuperBuilder;
 
 import java.util.UUID;
 
-@AllArgsConstructor
-@NoArgsConstructor
-@SuperBuilder
 @Getter
 @Setter
+@SuperBuilder
+@NoArgsConstructor
+@AllArgsConstructor
 public class FileDto extends AuditEntityDto {
 
-    @NotBlank(message = "Le nom du fichier est obligatoire")
+    @NotBlank(message = "File name is required")
     private String fileName;
 
-    @NotBlank(message = "Le lien du fichier est obligatoire")
-    private String fileLink;
+    @NotBlank(message = "File path is required")
+    private String filePath;
 
     private String fileType;
 
-    @NotNull(message = "L'ID de l'événement est obligatoire")
+    private Long fileSize;
+
+    private String description;
+
+    @NotNull(message = "Event ID is required")
     private UUID eventId;
 }

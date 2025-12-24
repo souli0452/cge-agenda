@@ -17,17 +17,23 @@ import lombok.experimental.SuperBuilder;
 @Table(name = "file")
 public class File extends AuditEntity {
 
-    @Column(name = "file_name", nullable = false, length = 255)
+    @Column(name = "file_name", nullable = false)
     private String fileName;
 
-    @Column(name = "file_link", nullable = false, length = 500)
-    private String fileLink;
+    @Column(name = "file_path", nullable = false)
+    private String filePath;
 
-    @Column(name = "file_type", length = 100)
+    @Column(name = "file_type")
     private String fileType;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "event_id", nullable = false, foreignKey = @ForeignKey(name = "fk_file_event"))
-    private Event event;
+    @Column(name = "file_size")
+    private Long fileSize;
 
+    @Column(name = "description")
+    private String description;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "event_id", nullable = false,
+            foreignKey = @ForeignKey(name = "fk_file_event"))
+    private Event event;
 }
