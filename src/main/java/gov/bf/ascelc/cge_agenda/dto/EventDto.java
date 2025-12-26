@@ -63,6 +63,8 @@ public class EventDto extends AuditEntityDto {
     @Builder.Default
     private List<ScheduleDto> schedules = new ArrayList<>();
 
+
+    private List<FileDto> files;
     /**
      * Liste des participants à créer ou à associer
      */

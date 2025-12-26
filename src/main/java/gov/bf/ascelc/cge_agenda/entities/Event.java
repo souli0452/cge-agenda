@@ -63,6 +63,8 @@ public class Event extends AuditEntity {
     @Builder.Default
     private Set<File> files = new HashSet<>();
 
+
+
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private Set<ParticipantEvent> participantEvents = new HashSet<>();

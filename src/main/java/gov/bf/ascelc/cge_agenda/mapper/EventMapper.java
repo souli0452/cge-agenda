@@ -5,9 +5,10 @@ import gov.bf.ascelc.cge_agenda.entities.Event;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
+
 import java.util.List;
 
-@Mapper(componentModel = "spring", uses = {ScheduleMapper.class})
+@Mapper(componentModel = "spring", uses = { ScheduleMapper.class })
 public interface EventMapper {
 
     // ==========================================
