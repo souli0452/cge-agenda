@@ -50,6 +50,9 @@ public class EventDto extends AuditEntityDto {
     @Size(max = 100)
     private String pays;
 
+    @Size(max = 100)
+    private String ville;
+
     @NotNull(message = "Le statut est obligatoire")
     private EventStatus status;
 

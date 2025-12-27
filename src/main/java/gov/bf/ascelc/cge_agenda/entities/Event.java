@@ -39,6 +39,9 @@ public class Event extends AuditEntity {
     @Column(name = "pays")
     private String pays;
 
+    @Column(name = "ville")
+    private String ville;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false,length = 50)
     private EventStatus status;
