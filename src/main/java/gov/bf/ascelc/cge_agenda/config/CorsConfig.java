@@ -16,7 +16,7 @@ public class CorsConfig {
                         .allowedOrigins("http://localhost:4200",
                                 "http://localhost:59308",
                                 "http://localhost:*" )
-                        .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")  // ✅ PATCH ajouté
+                        .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                         .allowedHeaders("*")
                         .allowCredentials(true);
             }
