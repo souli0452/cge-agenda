@@ -276,14 +276,27 @@ public class EventServiceImpl implements EventService {
                 ));
 
         List<Schedule> schedules = scheduleRepository.findByEventId(eventId);
-        Participant participant = findOrCreateParticipant(participantDto);
+
+        Participant participant;
+
+        // ✅ AJOUT : Si le DTO contient un ID, utiliser le participant existant
+        if (participantDto.getId() != null) {
+            log.info("Ajout du participant existant : ID = {}", participantDto.getId());
+            participant = participantRepository.findById(participantDto.getId())
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND,
+                            "Participant non trouvé avec l'ID : " + participantDto.getId()
+                    ));
+        } else {
+            // Sinon, créer ou trouver par email
+            participant = findOrCreateParticipant(participantDto);
+        }
 
         validateParticipantAvailability(participant, schedules);
 
-        // ✅ CORRECTION : Inverser la logique du test
+        // Vérifier si déjà inscrit
         if (participantEventRepository.existsByParticipantIdAndEventId(
                 participant.getId(), eventId)) {
-            // Si le participant EST DÉJÀ inscrit → erreur
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     String.format("Le participant %s %s est déjà inscrit à cet événement",
@@ -291,7 +304,7 @@ public class EventServiceImpl implements EventService {
             );
         }
 
-        // Si le participant N'EST PAS inscrit → l'ajouter
+        // Ajouter le participant à l'événement
         ParticipantEvent participantEvent = ParticipantEvent.builder()
                 .participant(participant)
                 .event(event)

@@ -20,13 +20,12 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ParticipantDto extends AuditEntityDto {
-    @NotBlank(message = "Le nom est obligatoire")
+    //@NotBlank(message = "Le nom est obligatoire")
     private String lastName;
-
-    @NotBlank(message = "Le prénom est obligatoire")
+    //@NotBlank(message = "Le prénom est obligatoire")
     private String firstName;
 
-    @NotBlank(message = "L'email est obligatoire")
+    //@NotBlank(message = "L'email est obligatoire")
     @Email(message = "Format d'email invalide")
     private String email;
 
@@ -34,6 +33,6 @@ public class ParticipantDto extends AuditEntityDto {
     private String jobTitle;
     private String organization;
 
-    @NotNull(message = "Le type de participant est obligatoire")
+   // @NotNull(message = "Le type de participant est obligatoire")
     private ParticipantType participantType;
 }
