@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@Mapper(componentModel = "spring", uses = { ScheduleMapper.class, ParticipantMapper.class })
+@Mapper(componentModel = "spring", uses = { ScheduleMapper.class, ParticipantMapper.class, FileMapper.class })
 public interface EventMapper {
 
     // ==========================================
