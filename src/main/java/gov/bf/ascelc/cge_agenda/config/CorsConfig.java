@@ -13,8 +13,10 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/api/**")
-                        .allowedOrigins("http://localhost:4200")  // Angular
-                        .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")  // ✅ PATCH ajouté
+                        .allowedOrigins("http://localhost:4200",
+                                "http://localhost:59308",
+                                "http://localhost:*" )
+                        .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                         .allowedHeaders("*")
                         .allowCredentials(true);
             }

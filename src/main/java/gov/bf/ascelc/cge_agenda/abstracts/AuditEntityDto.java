@@ -18,9 +18,9 @@ import java.util.UUID;
 public abstract class AuditEntityDto {
 
     private UUID id;
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "dd-MM-yyyy' à 'HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd' à 'HH:mm:ss")
     private LocalDateTime createdAt;
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "dd-MM-yyyy' à 'HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd' à 'HH:mm:ss")
     private LocalDateTime updatedAt;
     private String createdById;
     private String updatedById;

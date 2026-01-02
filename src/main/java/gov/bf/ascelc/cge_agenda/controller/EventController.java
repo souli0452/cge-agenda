@@ -182,6 +182,8 @@ public class EventController {
             @PathVariable UUID eventId,
             @Valid @RequestBody ParticipantDto participantDto
     ) {
+        // Si participantDto contient un ID, c'est un participant existant
+        // Sinon, c'est un nouveau participant à créer
         EventDto event = eventService.addParticipant(eventId, participantDto);
         return ResponseEntity.ok(event);
     }
