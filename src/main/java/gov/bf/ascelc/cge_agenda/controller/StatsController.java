@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 import static gov.bf.ascelc.cge_agenda.utils.ApiUrls.*;
 
 @RestController
@@ -41,5 +43,18 @@ public class StatsController {
         log.info("Génération du rapport mensuel : {}/{}", month, year);
         MonthlyReportDto report = statsService.getMonthlyReport(year, month);
         return ResponseEntity.ok(report);
+    }
+
+    /**
+     * Récupère les événements par statut ET par mois
+     * GET /api/v1/cge-agenda/stats/events-by-status-and-month/{year}
+     */
+    @GetMapping("/events-by-status-and-month/{year}")
+    public ResponseEntity<Map<String, Map<String, Long>>> getEventsByStatusAndMonth(
+            @PathVariable int year
+    ) {
+        log.info("Récupération des événements par statut et par mois pour l'année : {}", year);
+        Map<String, Map<String, Long>> stats = statsService.getEventsByStatusAndMonth(year);
+        return ResponseEntity.ok(stats);
     }
 }

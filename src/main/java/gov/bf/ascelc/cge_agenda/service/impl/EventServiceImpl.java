@@ -14,16 +14,36 @@ import gov.bf.ascelc.cge_agenda.repository.ParticipantEventRepository;
 import gov.bf.ascelc.cge_agenda.repository.ParticipantRepository;
 import gov.bf.ascelc.cge_agenda.repository.ScheduleRepository;
 import gov.bf.ascelc.cge_agenda.service.EventService;
-
-import gov.bf.ascelc.cge_agenda.service.PdfService;
 import gov.bf.ascelc.cge_agenda.utils.ValidationUtils;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+
+// iText PDF imports
+import com.itextpdf.io.font.constants.StandardFonts;
+import com.itextpdf.io.image.ImageDataFactory;
+import com.itextpdf.kernel.colors.ColorConstants;
+import com.itextpdf.kernel.colors.DeviceRgb;
+import com.itextpdf.kernel.font.PdfFont;
+import com.itextpdf.kernel.font.PdfFontFactory;
+import com.itextpdf.kernel.geom.PageSize;
+import com.itextpdf.kernel.pdf.PdfDocument;
+import com.itextpdf.kernel.pdf.PdfWriter;
+import com.itextpdf.layout.Document;
+import com.itextpdf.layout.borders.Border;
+import com.itextpdf.layout.borders.SolidBorder;
+import com.itextpdf.layout.element.*;
+import com.itextpdf.layout.properties.HorizontalAlignment;
+import com.itextpdf.layout.properties.TextAlignment;
+import com.itextpdf.layout.properties.UnitValue;
+import com.itextpdf.layout.properties.VerticalAlignment;
+
+// Apache POI imports (pour Excel)
+import org.apache.poi.ss.usermodel.*;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,14 +60,15 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @Transactional
 @RequiredArgsConstructor
-
 public class EventServiceImpl implements EventService {
 
     private final EventRepository eventRepository;
@@ -113,7 +134,6 @@ public class EventServiceImpl implements EventService {
     // ==========================================
     // REPORTER UN ÉVÉNEMENT
     // ==========================================
-
     @Override
     public EventDto postponeEvent(UUID id, LocalDate newStartDate, LocalDate newEndDate) {
         log.info("Report de l'événement : ID = {}, nouvelles dates : {} - {}",
@@ -123,12 +143,10 @@ public class EventServiceImpl implements EventService {
 
         return eventRepository.findById(id)
                 .map(event -> {
-                    // Sauvegarder les horaires globaux s'ils existaient
                     LocalTime globalStartTime = null;
                     LocalTime globalEndTime = null;
 
                     if (!event.getSchedules().isEmpty()) {
-                        //Utiliser stream().findFirst() au lieu de get(0)
                         Schedule firstSchedule = event.getSchedules()
                                 .stream()
                                 .findFirst()
@@ -140,22 +158,15 @@ public class EventServiceImpl implements EventService {
                         }
                     }
 
-                    // Modifier l'événement
                     event.setStatus(EventStatus.REPORTER);
                     event.setStartDate(newStartDate);
                     event.setEndDate(newEndDate);
                     event.setUpdatedAt(LocalDateTime.now());
-
-                    // Vider la collection de schedules
                     event.getSchedules().clear();
 
-                    // Sauvegarder
                     Event updated = eventRepository.save(event);
-
-                    // Supprimer les anciens schedules
                     scheduleRepository.deleteByEventId(id);
 
-                    // Recréer automatiquement les horaires si mode global
                     if (globalStartTime != null && globalEndTime != null) {
                         LocalDate currentDate = newStartDate;
                         while (!currentDate.isAfter(newEndDate)) {
@@ -193,7 +204,6 @@ public class EventServiceImpl implements EventService {
 
         List<Event> events = eventRepository.findAll();
 
-        // Filtrer par mot-clé
         if (keyword != null && !keyword.trim().isEmpty()) {
             String lowerKeyword = keyword.toLowerCase();
             events = events.stream()
@@ -203,21 +213,18 @@ public class EventServiceImpl implements EventService {
                     .collect(Collectors.toList());
         }
 
-        // Filtrer par type
         if (type != null) {
             events = events.stream()
                     .filter(e -> e.getType() == type)
                     .collect(Collectors.toList());
         }
 
-        // Filtrer par statut
         if (status != null) {
             events = events.stream()
                     .filter(e -> e.getStatus() == status)
                     .collect(Collectors.toList());
         }
 
-        // Filtrer par période
         if (startDate != null && endDate != null) {
             events = events.stream()
                     .filter(e -> !e.getEndDate().isBefore(startDate) &&
@@ -279,7 +286,6 @@ public class EventServiceImpl implements EventService {
 
         Participant participant;
 
-        // ✅ AJOUT : Si le DTO contient un ID, utiliser le participant existant
         if (participantDto.getId() != null) {
             log.info("Ajout du participant existant : ID = {}", participantDto.getId());
             participant = participantRepository.findById(participantDto.getId())
@@ -288,13 +294,11 @@ public class EventServiceImpl implements EventService {
                             "Participant non trouvé avec l'ID : " + participantDto.getId()
                     ));
         } else {
-            // Sinon, créer ou trouver par email
             participant = findOrCreateParticipant(participantDto);
         }
 
         validateParticipantAvailability(participant, schedules);
 
-        // Vérifier si déjà inscrit
         if (participantEventRepository.existsByParticipantIdAndEventId(
                 participant.getId(), eventId)) {
             throw new ResponseStatusException(
@@ -304,7 +308,6 @@ public class EventServiceImpl implements EventService {
             );
         }
 
-        // Ajouter le participant à l'événement
         ParticipantEvent participantEvent = ParticipantEvent.builder()
                 .participant(participant)
                 .event(event)
@@ -317,7 +320,6 @@ public class EventServiceImpl implements EventService {
 
         return getEventById(eventId);
     }
-
 
     // ==========================================
     // RETIRER UN PARTICIPANT
@@ -432,12 +434,12 @@ public class EventServiceImpl implements EventService {
     }
 
     // ==========================================
-    // GÉNÉRER LISTE D'ÉMARGEMENT
+    // GÉNÉRER LISTE D'ÉMARGEMENT PDF
     // ==========================================
     @Override
     @Transactional(readOnly = true)
     public byte[] generateAttendanceSheet(UUID eventId) {
-        log.info("Génération de la liste d'émargement pour l'événement : {}", eventId);
+        log.info("📄 Génération de la liste d'émargement PDF pour l'événement : {}", eventId);
 
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -445,63 +447,304 @@ public class EventServiceImpl implements EventService {
                         "Événement non trouvé avec l'ID : " + eventId
                 ));
 
-        List<Participant> participants = participantEventRepository
-                .findParticipantsByEventId(eventId);
+        // ✅ CORRECTION : Convertir Set en List
+        List<ParticipantEvent> participantEvents = new ArrayList<>(event.getParticipantEvents());
 
-        try (Workbook workbook = new XSSFWorkbook()) {
-            Sheet sheet = workbook.createSheet("Liste d'émargement");
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            PdfWriter writer = new PdfWriter(baos);
+            PdfDocument pdfDoc = new PdfDocument(writer);
+            Document document = new Document(pdfDoc, PageSize.A4);
 
-            // En-tête
-            Row headerRow = sheet.createRow(0);
-            headerRow.createCell(0).setCellValue("Événement : " + event.getTitle());
+            document.setMargins(20, 30, 30, 30);
 
-            Row dateRow = sheet.createRow(1);
-            dateRow.createCell(0).setCellValue("Du " + event.getStartDate() +
-                    " au " + event.getEndDate());
+            PdfFont fontBold = PdfFontFactory.createFont(StandardFonts.HELVETICA_BOLD);
+            PdfFont fontNormal = PdfFontFactory.createFont(StandardFonts.HELVETICA);
 
-            // En-tête du tableau
-            Row tableHeaderRow = sheet.createRow(3);
-            tableHeaderRow.createCell(0).setCellValue("N°");
-            tableHeaderRow.createCell(1).setCellValue("Nom");
-            tableHeaderRow.createCell(2).setCellValue("Prénom");
-            tableHeaderRow.createCell(3).setCellValue("Organisation");
-            tableHeaderRow.createCell(4).setCellValue("Email");
-            tableHeaderRow.createCell(5).setCellValue("Signature");
+            // EN-TÊTE
+            addPdfHeader(document, fontBold, fontNormal);
+            document.add(new Paragraph("\n"));
 
-            // Données
-            int rowNum = 4;
-            int index = 1;
-            for (Participant participant : participants) {
-                Row row = sheet.createRow(rowNum++);
-                row.createCell(0).setCellValue(index++);
-                row.createCell(1).setCellValue(participant.getLastName());
-                row.createCell(2).setCellValue(participant.getFirstName());
-                row.createCell(3).setCellValue(participant.getOrganization());
-                row.createCell(4).setCellValue(participant.getEmail());
-                row.createCell(5).setCellValue("");
-            }
+            // TITRE
+            Paragraph title = new Paragraph("LISTE D'ÉMARGEMENT")
+                    .setFont(fontBold)
+                    .setFontSize(16)
+                    .setTextAlignment(TextAlignment.CENTER)
+                    .setMarginTop(10)
+                    .setMarginBottom(20)
+                    .setUnderline();
+            document.add(title);
 
-            // Auto-size colonnes
-            for (int i = 0; i < 6; i++) {
-                sheet.autoSizeColumn(i);
-            }
+            // INFORMATIONS ÉVÉNEMENT
+            addEventInfoPdf(document, event, fontBold, fontNormal);
+            document.add(new Paragraph("\n"));
 
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            workbook.write(outputStream);
+            // TABLEAU PARTICIPANTS
+            addParticipantsTablePdf(document, participantEvents, fontBold, fontNormal);
 
-            log.info("Liste d'émargement générée avec succès");
-            return outputStream.toByteArray();
+            // SIGNATURE
+            addSignatureSectionPdf(document, fontNormal);
+
+            document.close();
+
+            log.info("✅ Liste d'émargement PDF générée avec succès");
+            return baos.toByteArray();
 
         } catch (Exception e) {
-            log.error("Erreur lors de la génération de la liste d'émargement : {}",
-                    e.getMessage());
+            log.error("❌ Erreur lors de la génération de la liste d'émargement PDF : {}", e.getMessage());
             throw new ResponseStatusException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Erreur lors de la génération de la liste d'émargement"
+                    "Erreur lors de la génération de la liste d'émargement : " + e.getMessage()
             );
         }
     }
 
+    // ==========================================
+    // MÉTHODES PRIVÉES POUR PDF
+    // ==========================================
+
+    private void addPdfHeader(Document document, PdfFont fontBold, PdfFont fontNormal) throws Exception {
+        // ✅ Utiliser le nom complet pour éviter conflit avec jakarta.persistence.Table
+        com.itextpdf.layout.element.Table headerTable = new com.itextpdf.layout.element.Table(
+                UnitValue.createPercentArray(new float[]{35, 30, 35}));
+        headerTable.setWidth(UnitValue.createPercentValue(100));
+
+        DeviceRgb borderColor = new DeviceRgb(150, 150, 150);
+
+        // COLONNE GAUCHE
+        com.itextpdf.layout.element.Cell leftCell = new com.itextpdf.layout.element.Cell()
+                .setBorder(new SolidBorder(borderColor, 1))
+                .setPadding(10)
+                .setVerticalAlignment(VerticalAlignment.MIDDLE);
+
+        Paragraph leftText = new Paragraph()
+                .add(new Text("AUTORITE SUPERIEURE DE\n").setFont(fontBold).setFontSize(9))
+                .add(new Text("CONTROLE D'ETAT ET DE LUTTE\n").setFont(fontBold).setFontSize(9))
+                .add(new Text("CONTRE LA CORRUPTION\n").setFont(fontBold).setFontSize(9))
+                .add(new Text("------------\n").setFont(fontNormal).setFontSize(8))
+                .add(new Text("SECRETARIAT GENERAL\n").setFont(fontBold).setFontSize(9))
+                .add(new Text("------------\n").setFont(fontNormal).setFontSize(8))
+                .add(new Text("DIRECTION DES SYSTEMES\n").setFont(fontBold).setFontSize(8))
+                .add(new Text("D'INFORMATION, DE LA\n").setFont(fontBold).setFontSize(8))
+                .add(new Text("DOCUMENTATION ET DES\n").setFont(fontBold).setFontSize(8))
+                .add(new Text("ARCHIVES").setFont(fontBold).setFontSize(8))
+                .setTextAlignment(TextAlignment.CENTER);
+
+        leftCell.add(leftText);
+
+        // COLONNE CENTRALE - LOGO
+        com.itextpdf.layout.element.Cell centerCell = new com.itextpdf.layout.element.Cell()
+                .setBorder(Border.NO_BORDER)
+                .setPadding(5)
+                .setVerticalAlignment(VerticalAlignment.MIDDLE)
+                .setHorizontalAlignment(HorizontalAlignment.CENTER);
+
+        try {
+            ClassPathResource logoResource = new ClassPathResource("static/images/logo.png");
+            if (logoResource.exists()) {
+                Image logo = new Image(ImageDataFactory.create(logoResource.getURL()))
+                        .setWidth(80)
+                        .setHorizontalAlignment(HorizontalAlignment.CENTER);
+                centerCell.add(logo);
+                log.info("✅ Logo chargé avec succès : logo.png");
+            } else {
+                log.warn("⚠️ Logo non trouvé : static/images/logo.png");
+                Paragraph logoText = new Paragraph("ASCELC")
+                        .setFont(fontBold)
+                        .setFontSize(20)
+                        .setTextAlignment(TextAlignment.CENTER)
+                        .setFontColor(new DeviceRgb(0, 100, 0));
+                centerCell.add(logoText);
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ Erreur chargement logo, utilisation du texte : {}", e.getMessage());
+            Paragraph logoText = new Paragraph("ASCELC")
+                    .setFont(fontBold)
+                    .setFontSize(20)
+                    .setTextAlignment(TextAlignment.CENTER)
+                    .setFontColor(new DeviceRgb(0, 100, 0));
+            centerCell.add(logoText);
+        }
+
+        // COLONNE DROITE
+        com.itextpdf.layout.element.Cell rightCell = new com.itextpdf.layout.element.Cell()
+                .setBorder(new SolidBorder(borderColor, 1))
+                .setPadding(10)
+                .setVerticalAlignment(VerticalAlignment.MIDDLE);
+
+        Paragraph rightText = new Paragraph()
+                .add(new Text("BURKINA FASO\n").setFont(fontBold).setFontSize(11))
+                .add(new Text("------------\n").setFont(fontNormal).setFontSize(8))
+                .add(new Text("La Patrie ou la Mort,\n").setFont(fontNormal).setFontSize(9).setItalic())
+                .add(new Text("nous Vaincrons").setFont(fontNormal).setFontSize(9).setItalic())
+                .setTextAlignment(TextAlignment.CENTER);
+
+        rightCell.add(rightText);
+
+        headerTable.addCell(leftCell);
+        headerTable.addCell(centerCell);
+        headerTable.addCell(rightCell);
+
+        document.add(headerTable);
+    }
+
+    private void addEventInfoPdf(Document document, Event event, PdfFont fontBold, PdfFont fontNormal) {
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+        com.itextpdf.layout.element.Table infoTable = new com.itextpdf.layout.element.Table(
+                UnitValue.createPercentArray(new float[]{30, 70}));
+        infoTable.setWidth(UnitValue.createPercentValue(100));
+        infoTable.setMarginBottom(10);
+
+        infoTable.addCell(createInfoCell("Titre :", fontBold));
+        infoTable.addCell(createInfoCell(event.getTitle(), fontNormal));
+
+        infoTable.addCell(createInfoCell("Type :", fontBold));
+        infoTable.addCell(createInfoCell(getTypeLabel(event.getType().name()), fontNormal));
+
+        String dateInfo = event.getStartDate().format(dateFormatter);
+        if (!event.getStartDate().equals(event.getEndDate())) {
+            dateInfo += " au " + event.getEndDate().format(dateFormatter);
+        }
+        infoTable.addCell(createInfoCell("Date :", fontBold));
+        infoTable.addCell(createInfoCell(dateInfo, fontNormal));
+
+        String lieu = "";
+        if (event.getVille() != null) lieu += event.getVille();
+        if (event.getPays() != null) {
+            if (!lieu.isEmpty()) lieu += ", ";
+            lieu += event.getPays();
+        }
+        if (!lieu.isEmpty()) {
+            infoTable.addCell(createInfoCell("Lieu :", fontBold));
+            infoTable.addCell(createInfoCell(lieu, fontNormal));
+        }
+
+        document.add(infoTable);
+    }
+
+    private com.itextpdf.layout.element.Cell createInfoCell(String text, PdfFont font) {
+        return new com.itextpdf.layout.element.Cell()
+                .add(new Paragraph(text).setFont(font).setFontSize(10))
+                .setBorder(Border.NO_BORDER)
+                .setPadding(3);
+    }
+
+    private void addParticipantsTablePdf(Document document, List<ParticipantEvent> participantEvents,
+                                         PdfFont fontBold, PdfFont fontNormal) {
+        if (participantEvents == null || participantEvents.isEmpty()) {
+            document.add(new Paragraph("Aucun participant enregistré")
+                    .setFont(fontNormal)
+                    .setFontSize(10)
+                    .setTextAlignment(TextAlignment.CENTER)
+                    .setFontColor(ColorConstants.GRAY));
+            return;
+        }
+
+        float[] columnWidths = {8, 30, 30, 32};
+        com.itextpdf.layout.element.Table table = new com.itextpdf.layout.element.Table(
+                UnitValue.createPercentArray(columnWidths));
+        table.setWidth(UnitValue.createPercentValue(100));
+
+        DeviceRgb headerColor = new DeviceRgb(220, 220, 220);
+
+        table.addHeaderCell(createHeaderCell("N°", fontBold, headerColor));
+        table.addHeaderCell(createHeaderCell("Nom et Prénoms", fontBold, headerColor));
+        table.addHeaderCell(createHeaderCell("Organisation / Fonction", fontBold, headerColor));
+        table.addHeaderCell(createHeaderCell("Signature", fontBold, headerColor));
+
+        int index = 1;
+        for (ParticipantEvent pe : participantEvents) {
+            Participant participant = pe.getParticipant();
+
+            table.addCell(createDataCell(String.valueOf(index++), fontNormal, TextAlignment.CENTER));
+
+            String fullName = participant.getFirstName() + " " + participant.getLastName();
+            table.addCell(createDataCell(fullName, fontNormal, TextAlignment.LEFT));
+
+            String orgFunction = "";
+            if (participant.getOrganization() != null) {
+                orgFunction = participant.getOrganization();
+            }
+            if (participant.getJobTitle() != null) {
+                if (!orgFunction.isEmpty()) orgFunction += "\n";
+                orgFunction += participant.getJobTitle();
+            }
+            if (orgFunction.isEmpty()) orgFunction = "-";
+            table.addCell(createDataCell(orgFunction, fontNormal, TextAlignment.LEFT));
+
+            table.addCell(createDataCell("", fontNormal, TextAlignment.CENTER));
+        }
+
+        document.add(table);
+    }
+
+    private com.itextpdf.layout.element.Cell createHeaderCell(String text, PdfFont font, DeviceRgb bgColor) {
+        return new com.itextpdf.layout.element.Cell()
+                .add(new Paragraph(text).setFont(font).setFontSize(9).setBold())
+                .setBackgroundColor(bgColor)
+                .setTextAlignment(TextAlignment.CENTER)
+                .setPadding(8)
+                .setBorder(new SolidBorder(ColorConstants.BLACK, 1));
+    }
+
+    private com.itextpdf.layout.element.Cell createDataCell(String text, PdfFont font, TextAlignment alignment) {
+        return new com.itextpdf.layout.element.Cell()
+                .add(new Paragraph(text).setFont(font).setFontSize(9))
+                .setTextAlignment(alignment)
+                .setPadding(8)
+                .setMinHeight(35)
+                .setBorder(new SolidBorder(ColorConstants.BLACK, 0.5f));
+    }
+
+    private void addSignatureSectionPdf(Document document, PdfFont fontNormal) {
+        document.add(new Paragraph("\n\n"));
+
+        com.itextpdf.layout.element.Table signatureTable = new com.itextpdf.layout.element.Table(
+                UnitValue.createPercentArray(new float[]{50, 50}));
+        signatureTable.setWidth(UnitValue.createPercentValue(100));
+
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        String today = LocalDate.now().format(dateFormatter);
+
+        com.itextpdf.layout.element.Cell dateCell = new com.itextpdf.layout.element.Cell()
+                .add(new Paragraph("Fait à Ouagadougou, le " + today)
+                        .setFont(fontNormal)
+                        .setFontSize(10))
+                .setBorder(Border.NO_BORDER);
+
+        com.itextpdf.layout.element.Cell signatureCell = new com.itextpdf.layout.element.Cell()
+                .add(new Paragraph("Le Responsable")
+                        .setFont(fontNormal)
+                        .setFontSize(10)
+                        .setTextAlignment(TextAlignment.CENTER))
+                .add(new Paragraph("\n\n\n")
+                        .setFont(fontNormal)
+                        .setFontSize(10))
+                .setBorder(Border.NO_BORDER);
+
+        signatureTable.addCell(dateCell);
+        signatureTable.addCell(signatureCell);
+
+        document.add(signatureTable);
+    }
+
+    private String getTypeLabel(String type) {
+        return switch (type) {
+            case "REUNION" -> "Réunion";
+            case "CONFERENCE" -> "Conférence";
+            case "ATELIER" -> "Atelier";
+            case "SEMINAIRE" -> "Séminaire";
+            case "FORMATION" -> "Formation";
+            case "MISSION" -> "Mission";
+            case "AUTRE" -> "Autre";
+            default -> type;
+        };
+    }
+
+    // ==========================================
+    // VÉRIFIER DISPONIBILITÉ PARTICIPANT
+    // ==========================================
     @Override
     public boolean isParticipantAvailable(UUID participantId, LocalDate date,
                                           LocalTime startTime, LocalTime endTime) {
@@ -513,7 +756,6 @@ public class EventServiceImpl implements EventService {
                         "Participant non trouvé avec l'ID : " + participantId
                 ));
 
-        // Créer un horaire temporaire pour la vérification
         Schedule tempSchedule = Schedule.builder()
                 .dateJour(date)
                 .startTime(startTime)
@@ -578,7 +820,6 @@ public class EventServiceImpl implements EventService {
         try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(fileContent))) {
             Sheet sheet = workbook.getSheetAt(0);
 
-            // Ignorer la première ligne (en-tête)
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
                 if (row != null) {
@@ -599,7 +840,7 @@ public class EventServiceImpl implements EventService {
         return participants;
     }
 
-    private String getCellValue(Cell cell) {
+    private String getCellValue(org.apache.poi.ss.usermodel.Cell cell) {
         if (cell == null) {
             return "";
         }
@@ -655,10 +896,8 @@ public class EventServiceImpl implements EventService {
         return schedules;
     }
 
-    //  AMÉLIORATION : Vérifier les doublons d'emails
     private void processParticipants(Event event, List<ParticipantDto> participantDtos,
                                      List<Schedule> newSchedules) {
-        // Vérifier les doublons dans la liste
         Set<String> emails = new HashSet<>();
         for (ParticipantDto dto : participantDtos) {
             String email = dto.getEmail().toLowerCase();
@@ -670,7 +909,6 @@ public class EventServiceImpl implements EventService {
             }
         }
 
-        // Ajouter les participants
         for (ParticipantDto participantDto : participantDtos) {
             Participant participant = findOrCreateParticipant(participantDto);
             validateParticipantAvailability(participant, newSchedules);
@@ -866,7 +1104,6 @@ public class EventServiceImpl implements EventService {
                 ));
     }
 
-
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(UUID id) {
@@ -881,9 +1118,7 @@ public class EventServiceImpl implements EventService {
         log.info("- {} fichiers", event.getFiles().size());
         log.info("- {} participants", event.getParticipantEvents().size());
 
-        // Supprimer les fichiers physiques AVANT la suppression en base
         if (!event.getFiles().isEmpty()) {
-            // Force le chargement de la collection
             event.getFiles().forEach(file -> {
                 try {
                     Path filePath = Paths.get(file.getFilePath());
@@ -899,26 +1134,21 @@ public class EventServiceImpl implements EventService {
             });
         }
 
-        // Supprimer explicitement les ParticipantEvent
         if (!event.getParticipantEvents().isEmpty()) {
             log.info("Suppression de {} participantEvents", event.getParticipantEvents().size());
             participantEventRepository.deleteAll(event.getParticipantEvents());
         }
 
-        // Supprimer explicitement les Schedule
         if (!event.getSchedules().isEmpty()) {
             log.info("Suppression de {} schedules", event.getSchedules().size());
             scheduleRepository.deleteAll(event.getSchedules());
         }
 
-        // Supprimer explicitement les File
         if (!event.getFiles().isEmpty()) {
             log.info("Suppression de {} fichiers en base", event.getFiles().size());
-            // Les fichiers seront supprimés par cascade, mais on peut le faire explicitement
             event.getFiles().clear();
         }
 
-        // Supprimer l'événement
         eventRepository.deleteById(id);
         log.info("✓ Événement supprimé avec succès : ID = {}", id);
     }
