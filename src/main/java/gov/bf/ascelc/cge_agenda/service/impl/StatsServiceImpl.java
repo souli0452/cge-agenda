@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -132,4 +133,62 @@ public class StatsServiceImpl implements StatsService {
                 .events(eventMapper.toDtos(monthEvents))
                 .build();
     }
+
+
+    @Override
+    public Map<String, Map<String, Long>> getEventsByStatusAndMonth(int year) {
+        log.info("=== DÉBUT getEventsByStatusAndMonth pour l'année : {} ===", year);
+
+        // Récupérer TOUS les événements
+        List<Event> allEventsBeforeFilter = eventRepository.findAll();
+        log.info("Total événements dans la base : {}", allEventsBeforeFilter.size());
+
+        // Afficher les années des événements
+        allEventsBeforeFilter.forEach(e -> {
+            log.info("Événement '{}' : startDate={}, année={}, statut={}",
+                    e.getTitle(),
+                    e.getStartDate(),
+                    e.getStartDate() != null ? e.getStartDate().getYear() : "NULL",
+                    e.getStatus());
+        });
+
+        // Filtrer par année
+        List<Event> allEvents = allEventsBeforeFilter.stream()
+                .filter(e -> e.getStartDate() != null && e.getStartDate().getYear() == year)
+                .toList();
+
+        log.info("Événements après filtre année {} : {}", year, allEvents.size());
+
+        String[] months = {"Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+                "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"};
+
+        Map<String, Map<String, Long>> result = new LinkedHashMap<>();
+
+        // Initialiser pour chaque statut
+        for (EventStatus status : EventStatus.values()) {
+            Map<String, Long> monthsMap = new LinkedHashMap<>();
+            for (String month : months) {
+                monthsMap.put(month, 0L);
+            }
+            result.put(status.name(), monthsMap);
+        }
+
+        // Compter les événements
+        for (Event event : allEvents) {
+            int monthIndex = event.getStartDate().getMonthValue() - 1;
+            String monthName = months[monthIndex];
+            String statusName = event.getStatus().name();
+
+            Map<String, Long> statusMonths = result.get(statusName);
+            statusMonths.put(monthName, statusMonths.get(monthName) + 1);
+
+            log.info("✓ Comptage : Événement '{}' → {} / {}",
+                    event.getTitle(), statusName, monthName);
+        }
+
+        log.info("=== FIN getEventsByStatusAndMonth ===");
+        return result;
+    }
+
+
 }

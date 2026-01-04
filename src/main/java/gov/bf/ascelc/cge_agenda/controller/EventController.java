@@ -243,20 +243,19 @@ public class EventController {
      */
     @GetMapping(GENERATE_ATTENDANCE_SHEET)
     public ResponseEntity<byte[]> generateAttendanceSheet(@PathVariable UUID id) {
-        log.info("Génération de la liste d'émargement pour l'événement : {}", id);
+        log.info("Génération de la liste d'émargement PDF pour l'événement : {}", id);
 
-        byte[] excelFile = eventService.generateAttendanceSheet(id);
+        byte[] pdfFile = eventService.generateAttendanceSheet(id);
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        headers.setContentType(MediaType.APPLICATION_PDF);
         headers.setContentDispositionFormData("attachment",
-                "liste_emargement_" + id + ".xlsx");
+                "liste_emargement_" + id + ".pdf");
 
         return ResponseEntity.ok()
                 .headers(headers)
-                .body(excelFile);
+                .body(pdfFile);
     }
-
     /**
      * Génère le calendrier PDF d'un mois
      */
