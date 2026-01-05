@@ -325,6 +325,7 @@ public class EventServiceImpl implements EventService {
     // RETIRER UN PARTICIPANT
     // ==========================================
     @Override
+    @Transactional
     public EventDto removeParticipant(UUID eventId, UUID participantId) {
         log.info("Retrait du participant {} de l'événement {}", participantId, eventId);
 
@@ -335,11 +336,8 @@ public class EventServiceImpl implements EventService {
             );
         }
 
-        participantEventRepository.findAll().stream()
-                .filter(pe -> pe.getEvent().getId().equals(eventId) &&
-                        pe.getParticipant().getId().equals(participantId))
-                .findFirst()
-                .ifPresent(participantEventRepository::delete);
+        // SUPPRESSION DIRECTE AVEC LA REQUÊTE
+        participantEventRepository.deleteByEventIdAndParticipantId(eventId, participantId);
 
         log.info("Participant retiré avec succès");
         return getEventById(eventId);

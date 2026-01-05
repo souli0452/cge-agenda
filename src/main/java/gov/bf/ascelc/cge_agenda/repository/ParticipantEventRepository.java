@@ -4,9 +4,12 @@ import gov.bf.ascelc.cge_agenda.entities.Event;
 import gov.bf.ascelc.cge_agenda.entities.Participant;
 import gov.bf.ascelc.cge_agenda.entities.ParticipantEvent;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -18,6 +21,11 @@ public interface ParticipantEventRepository extends JpaRepository<ParticipantEve
 
     @Query("SELECT pe.participant FROM ParticipantEvent pe WHERE pe.event.id = :eventId")
     List<Participant> findParticipantsByEventId(@Param("eventId") UUID eventId);
+
+    @Transactional
+    @Modifying
+    @Query("DELETE FROM ParticipantEvent pe WHERE pe.event.id = :eventId AND pe.participant.id = :participantId")
+    void deleteByEventIdAndParticipantId(@Param("eventId") UUID eventId, @Param("participantId") UUID participantId);
 
     boolean existsByParticipantIdAndEventId(UUID participantId, UUID eventId);
 }
