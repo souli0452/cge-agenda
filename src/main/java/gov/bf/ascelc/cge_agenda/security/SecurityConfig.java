@@ -13,6 +13,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 
+import static gov.bf.ascelc.cge_agenda.utils.ApiUrls.*;
+import static gov.bf.ascelc.cge_agenda.utils.Constant.ROLE_ADMIN;
+import static gov.bf.ascelc.cge_agenda.utils.Constant.ROLE_USER;
+
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
@@ -33,9 +37,9 @@ public class SecurityConfig {
                 .headers(h -> h.frameOptions(fo -> fo.disable()))
                 .authorizeHttpRequests(ar -> ar
                         .requestMatchers("/swagger-ui.html", "/v3/**", "/swagger-ui/**").permitAll()
-                        .requestMatchers("/api/v1/cge-agenda/event/all").hasRole("USER")
-                        .requestMatchers("/api/v1/cge-agenda/event/**").hasRole("ADMIN")
-                        .anyRequest().authenticated()
+                        .requestMatchers(GET_ALL_EVENT, GET_EVENT_BY_ID, UPDATE_EVENT, DELETE_EVENT, CREATE_EVENT).hasAnyRole(ROLE_USER,ROLE_ADMIN)
+                        .requestMatchers("/api/v1/cge-agenda/stats/dashboard").hasAnyRole(ROLE_ADMIN)
+                        .anyRequest().denyAll()
                 )
                 .oauth2ResourceServer(o2 -> o2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter)))
                 .build();
