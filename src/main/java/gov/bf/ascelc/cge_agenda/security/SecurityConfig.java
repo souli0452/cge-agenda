@@ -38,7 +38,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(ar -> ar
                         .requestMatchers("/swagger-ui.html", "/v3/**", "/swagger-ui/**").permitAll()
                         .requestMatchers(GET_ALL_EVENT, GET_EVENT_BY_ID, UPDATE_EVENT, DELETE_EVENT, CREATE_EVENT).hasAnyRole(ROLE_USER,ROLE_ADMIN)
-                        .requestMatchers("/api/v1/cge-agenda/stats/dashboard").hasAnyRole(ROLE_ADMIN)
+                        .requestMatchers("/api/v1/cge-agenda/stats/dashboard").hasAnyRole(ROLE_ADMIN, ROLE_USER)
                         .anyRequest().denyAll()
                 )
                 .oauth2ResourceServer(o2 -> o2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter)))
