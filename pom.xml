@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>3.2.1</version>
+		<version>3.4.1</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>gov.bf.ascelc</groupId>
@@ -67,6 +67,18 @@
 			<version>${lombok.version}</version>
 			<optional>true</optional>
 		</dependency>
+
+		<!-- security -->
+
+			<dependency>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-starter-security</artifactId>
+			</dependency>
+
+			<dependency>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+			</dependency>
 
 		<!-- MapStruct (mapping entité <-> DTO) -->
 		<dependency>

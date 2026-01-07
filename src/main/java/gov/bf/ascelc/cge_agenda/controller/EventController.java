@@ -10,6 +10,7 @@ import gov.bf.ascelc.cge_agenda.repository.EventRepository;
 import gov.bf.ascelc.cge_agenda.service.EmailService;
 import gov.bf.ascelc.cge_agenda.service.EventService;
 import gov.bf.ascelc.cge_agenda.service.PdfService;
+import gov.bf.ascelc.cge_agenda.utils.ApiUrls;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,7 +31,7 @@ import java.util.UUID;
 import static gov.bf.ascelc.cge_agenda.utils.ApiUrls.*;
 
 @RestController
-@RequestMapping(EVENT_ROOT_URL)
+//@RequestMapping(EVENT_ROOT_URL)
 @RequiredArgsConstructor
 @Slf4j
 public class EventController {

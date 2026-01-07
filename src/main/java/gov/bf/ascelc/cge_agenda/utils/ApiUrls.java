@@ -17,11 +17,11 @@ public class ApiUrls {
     public static final String EVENT_ROOT_URL = CGE_AGENDA_ROOT_URL + "/event";
 
     // CRUD basique
-    public static final String CREATE_EVENT = "/create";
-    public static final String UPDATE_EVENT = "/update/{id}";
-    public static final String DELETE_EVENT = "/delete/{id}";
-    public static final String GET_EVENT_BY_ID = "/get/{id}";
-    public static final String GET_ALL_EVENT = "/all";
+    public static final String CREATE_EVENT = EVENT_ROOT_URL + "/create";
+    public static final String UPDATE_EVENT = EVENT_ROOT_URL + "/update/{id}";
+    public static final String DELETE_EVENT = EVENT_ROOT_URL + "/delete/{id}";
+    public static final String GET_EVENT_BY_ID = EVENT_ROOT_URL + "/get/{id}";
+    public static final String GET_ALL_EVENT = EVENT_ROOT_URL + "/all";
 
     // Actions sur événements
     public static final String CANCEL_EVENT = "/cancel/{id}";
