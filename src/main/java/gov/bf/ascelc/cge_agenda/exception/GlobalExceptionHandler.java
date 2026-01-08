@@ -1,5 +1,6 @@
 package gov.bf.ascelc.cge_agenda.exception;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -7,6 +8,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -18,6 +20,7 @@ import java.util.stream.Collectors;
  * Gestionnaire global des exceptions
  * Capture TOUTES les exceptions de l'application et retourne des réponses HTTP appropriées
  */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -33,6 +36,34 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now()
         );
         return new ResponseEntity<>(error, ex.getStatusCode());
+    }
+
+    // ==========================================
+    // GESTION ERREUR UUID (KEYCLOAK)
+    // ==========================================
+    /**
+     * Gère les erreurs de conversion UUID (erreur avec "all", etc.)
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleUUIDConversionError(
+            MethodArgumentTypeMismatchException ex
+    ) {
+        log.error("❌ Erreur de conversion de type : {}", ex.getMessage());
+
+        String message = "Format invalide pour le paramètre '" + ex.getName() + "'. ";
+
+        if (ex.getRequiredType() != null && ex.getRequiredType().getSimpleName().equals("UUID")) {
+            message += "Un UUID valide est attendu (format: 123e4567-e89b-12d3-a456-426614174000).";
+        } else {
+            message += "Type attendu: " + (ex.getRequiredType() != null ? ex.getRequiredType().getSimpleName() : "inconnu");
+        }
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                message,
+                LocalDateTime.now()
+        );
+        return ResponseEntity.badRequest().body(error);
     }
 
     // ==========================================
@@ -69,7 +100,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex) {
         String message = "Erreur d'intégrité des données. ";
 
-        // Identifier le type d'erreur
         if (ex.getMessage().contains("unique constraint") ||
                 ex.getMessage().contains("duplicate key")) {
             message += "Cette valeur existe déjà dans la base de données.";
@@ -90,10 +120,6 @@ public class GlobalExceptionHandler {
     // ==========================================
     // FICHIER TROP VOLUMINEUX
     // ==========================================
-    /**
-     * Gère les erreurs de taille de fichier dépassée
-     * Limite définie dans application.properties
-     */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
         ErrorResponse error = new ErrorResponse(
@@ -107,9 +133,6 @@ public class GlobalExceptionHandler {
     // ==========================================
     // ERREURS D'ENTRÉE/SORTIE (Fichiers)
     // ==========================================
-    /**
-     * Gère les erreurs de lecture/écriture de fichiers
-     */
     @ExceptionHandler(IOException.class)
     public ResponseEntity<ErrorResponse> handleIOException(IOException ex) {
         ErrorResponse error = new ErrorResponse(
@@ -123,10 +146,6 @@ public class GlobalExceptionHandler {
     // ==========================================
     // ARGUMENT ILLÉGAL (Paramètres invalides)
     // ==========================================
-    /**
-     * Gère les erreurs d'arguments invalides
-     * Exemple : Enum invalide, paramètre null inattendu
-     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
         ErrorResponse error = new ErrorResponse(
@@ -140,11 +159,9 @@ public class GlobalExceptionHandler {
     // ==========================================
     // NULL POINTER EXCEPTION (Erreur de code)
     // ==========================================
-    /**
-     * Gère les NullPointerException (ne devrait pas arriver en production)
-     */
     @ExceptionHandler(NullPointerException.class)
     public ResponseEntity<ErrorResponse> handleNullPointer(NullPointerException ex) {
+        log.error("❌ NullPointerException détectée", ex);
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
                 "Erreur interne : une valeur requise est manquante",
@@ -156,15 +173,9 @@ public class GlobalExceptionHandler {
     // ==========================================
     // EXCEPTION GÉNÉRIQUE (Catch-all)
     // ==========================================
-    /**
-     * Capture TOUTES les autres exceptions non gérées
-     * C'est le filet de sécurité final
-     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception ex) {
-        // Log l'erreur pour debugging
-        System.err.println("Exception non gérée : " + ex.getClass().getName());
-        ex.printStackTrace();
+        log.error("❌ Exception non gérée : " + ex.getClass().getName(), ex);
 
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),

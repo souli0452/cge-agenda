@@ -31,7 +31,7 @@ import java.util.UUID;
 import static gov.bf.ascelc.cge_agenda.utils.ApiUrls.*;
 
 @RestController
-//@RequestMapping(EVENT_ROOT_URL)
+@RequestMapping(EVENT_ROOT_URL)
 @RequiredArgsConstructor
 @Slf4j
 public class EventController {

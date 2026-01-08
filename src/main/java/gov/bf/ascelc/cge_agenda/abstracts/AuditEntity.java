@@ -9,6 +9,9 @@ import lombok.experimental.SuperBuilder;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -52,5 +55,22 @@ public abstract class AuditEntity implements Serializable {
 
     @Column(name = "current_user_email")
     private String currentUserEmail;
+
+
+    @PrePersist
+    @PreUpdate
+    public void captureUserInfo() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+            if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+                this.currentFirstName = jwt.getClaim("given_name");
+                this.currentLastName = jwt.getClaim("family_name");
+                this.currentUserEmail = jwt.getClaim("email");
+            }
+        } catch (Exception e) {
+            // Log silencieux, ne pas bloquer la création
+        }
+    }
 }
 
