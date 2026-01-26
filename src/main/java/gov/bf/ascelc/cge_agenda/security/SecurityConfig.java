@@ -1,3 +1,4 @@
+
 package gov.bf.ascelc.cge_agenda.security;
 
 import org.springframework.context.annotation.Bean;
@@ -43,32 +44,29 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui.html", "/v3/**", "/swagger-ui/**").permitAll()
 
                         // ==========================================
-                        // ADMIN - ACCÈS TOTAL À TOUT
+                        // ADMIN SEULEMENT - Suppression totale
                         // ==========================================
-                        .requestMatchers("/api/**").hasAnyRole(ROLE_ADMIN, ROLE_USER)
+                        .requestMatchers(HttpMethod.DELETE, "/api/**").hasRole(ROLE_ADMIN)
 
                         // ==========================================
-                        // USER - Accès en lecture seule (GET)
-                        // ==========================================
-                        .requestMatchers(HttpMethod.GET, "/api/**").hasRole(ROLE_USER)
-
-                        // ==========================================
-                        // USER - Peut créer/modifier des événements
+                        // USER & ADMIN - Écriture (POST/PUT/PATCH)
                         // ==========================================
                         .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/event/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/cge-agenda/event/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/cge-agenda/event/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
-
-                        // ==========================================
-                        // USER - Peut créer/modifier des participants
-                        // ==========================================
                         .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/participant/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/cge-agenda/participant/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/file/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
 
                         // ==========================================
-                        // ADMIN SEULEMENT - Suppression
+                        // LECTURE - Tous les utilisateurs authentifiés
                         // ==========================================
-                        .requestMatchers(HttpMethod.DELETE, "/api/**").hasRole(ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.GET, "/api/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
+
+                        // ==========================================
+                        // EXPORT PDF - Nécessite authentification
+                        // ==========================================
+                        .requestMatchers("/api/v1/cge-agenda/events/export").hasAnyRole(ROLE_USER, ROLE_ADMIN)
 
                         // ==========================================
                         // PAR DÉFAUT - Authentifié requis

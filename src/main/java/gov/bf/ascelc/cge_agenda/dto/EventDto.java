@@ -15,15 +15,11 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * DTO pour créer un événement avec participants et horaires
- */
 @Getter
 @Setter
 @NoArgsConstructor
 @SuperBuilder
 @AllArgsConstructor
-
 public class EventDto extends AuditEntityDto {
 
     @NotBlank(message = "Le titre est obligatoire")
@@ -38,9 +34,6 @@ public class EventDto extends AuditEntityDto {
     @NotNull(message = "La date de fin est obligatoire")
     private LocalDate endDate;
 
-    /**
-     * MODE A : Horaires globaux (optionnel si schedules fournis)
-     */
     private LocalTime globalStartTime;
     private LocalTime globalEndTime;
 
@@ -59,21 +52,17 @@ public class EventDto extends AuditEntityDto {
     @NotNull(message = "Le type est obligatoire")
     private EventType type;
 
-    /**
-     * MODE B : Horaires spécifiques par jour
-     */
     @Valid
     @Builder.Default
     private List<ScheduleDto> schedules = new ArrayList<>();
 
-
     private List<FileDto> files;
-    /**
-     * Liste des participants à créer ou à associer
-     */
+
     @Valid
     @Builder.Default
     private List<ParticipantDto> participants = new ArrayList<>();
+
+    private List<String> structures;
 
     public boolean isGlobalScheduleMode() {
         return (schedules == null || schedules.isEmpty()) &&

@@ -72,6 +72,7 @@ public class Event extends AuditEntity {
     @Builder.Default
     private Set<ParticipantEvent> participantEvents = new HashSet<>();
 
+
     /**
      * Vérifie si l'événement est multi-jours
      */

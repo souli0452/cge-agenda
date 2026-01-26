@@ -7,6 +7,7 @@ public enum EventType {
     SEMINAIRE("Séminaire"),
     FORMATION("Formation"),
     MISSION("Mission"),
+    AUDIANCE("Audiance"),
     AUTRE("Autre");
 
 

@@ -17,10 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -35,52 +32,49 @@ public class StatsServiceImpl implements StatsService {
 
     @Override
     public DashboardStatsDto getDashboardStats() {
-        log.info("Génération des statistiques du dashboard");
+        log.info("📊 Génération des statistiques du dashboard");
 
-        // Récupérer tous les événements
-        List<Event> allEvents = eventRepository.findAll();
+        long totalEvents = eventRepository.count();
+        long uniqueParticipants = participantEventRepository.countUniqueParticipants();
+        long totalInscriptions = participantEventRepository.count();
 
-        // Total événements
-        long totalEvents = allEvents.size();
+        // Agrégations par statut
+        Map<EventStatus, Long> eventsByStatus = eventRepository.countByStatus().stream()
+                .collect(Collectors.toMap(
+                        entry -> (EventStatus) entry[0],
+                        entry -> ((Number) entry[1]).longValue()
+                ));
 
-        // Total participants (unique)
-        int totalParticipants = (int) participantEventRepository.count();
-
-        // Grouper par statut
-        Map<EventStatus, Long> eventsByStatus = allEvents.stream()
-                .collect(Collectors.groupingBy(Event::getStatus, Collectors.counting()));
-
-        // Grouper par type
-        Map<EventType, Long> eventsByType = allEvents.stream()
-                .collect(Collectors.groupingBy(Event::getType, Collectors.counting()));
+        // Agrégations par type
+        Map<EventType, Long> eventsByType = eventRepository.countByType().stream()
+                .collect(Collectors.toMap(
+                        entry -> (EventType) entry[0],
+                        entry -> ((Number) entry[1]).longValue()
+                ));
 
         // Événements à venir (7 prochains jours)
         LocalDate today = LocalDate.now();
         LocalDate weekFromNow = today.plusDays(7);
+        List<Event> upcomingEvents = eventRepository.findUpcomingEvents(today, weekFromNow);
 
-        List<Event> upcomingEvents = allEvents.stream()
-                .filter(e -> e.getStartDate().isAfter(today) &&
-                        e.getStartDate().isBefore(weekFromNow))
-                .sorted(Comparator.comparing(Event::getStartDate))
-                .toList();
-
-        // Top 3 types d'événements
+        // Top 3 types
         List<TypeStatsDto> topTypes = eventsByType.entrySet().stream()
                 .sorted(Map.Entry.<EventType, Long>comparingByValue().reversed())
                 .limit(3)
                 .map(entry -> TypeStatsDto.builder()
                         .type(entry.getKey())
                         .count(entry.getValue())
-                        .percentage((double) entry.getValue() / totalEvents * 100)
+                        .percentage(totalEvents > 0 ? (double) entry.getValue() / totalEvents * 100 : 0)
                         .build())
                 .toList();
 
-        log.info("Statistiques générées : {} événements, {} participants",
-                totalEvents, totalParticipants);
+        log.info("✅ Dashboard généré : {} événements, {} participants uniques, {} inscriptions",
+                totalEvents, uniqueParticipants, totalInscriptions);
 
         return DashboardStatsDto.builder()
                 .totalEvents(totalEvents)
-                .totalParticipants(totalParticipants)
+                .totalParticipants(uniqueParticipants)
+                .totalInscriptions(totalInscriptions)
                 .upcomingEventsCount(upcomingEvents.size())
                 .eventsByStatus(eventsByStatus)
                 .eventsByType(eventsByType)
@@ -91,104 +85,63 @@ public class StatsServiceImpl implements StatsService {
 
     @Override
     public MonthlyReportDto getMonthlyReport(int year, int month) {
-        log.info("Génération du rapport mensuel : {}/{}", month, year);
+        log.info("📅 Génération du rapport mensuel : {}/{}", month, year);
 
-        // Calculer les dates de début et fin du mois
-        YearMonth yearMonth = YearMonth.of(year, month);
-        LocalDate startDate = yearMonth.atDay(1);
-        LocalDate endDate = yearMonth.atEndOfMonth();
+        YearMonth ym = YearMonth.of(year, month);
+        LocalDate startOfMonth = ym.atDay(1);
+        LocalDate endOfMonth = ym.atEndOfMonth();
 
-        // Récupérer les événements du mois
-        List<Event> monthEvents = eventRepository.findAll().stream()
-                .filter(e -> !e.getStartDate().isBefore(startDate) &&
-                        !e.getStartDate().isAfter(endDate))
-                .toList();
-
-        // Total événements
+        List<Event> monthEvents = eventRepository.findByMonth(startOfMonth, endOfMonth);
         int totalEvents = monthEvents.size();
 
-        // Total participants du mois
-        int totalParticipants = monthEvents.stream()
-                .mapToInt(e -> e.getParticipantEvents().size())
-                .sum();
+        Set<UUID> eventIds = monthEvents.stream().map(Event::getId).collect(Collectors.toSet());
+        long uniqueParticipants = eventIds.isEmpty() ? 0 :
+                participantEventRepository.countUniqueParticipantsByEventIds(eventIds);
 
-        // Grouper par type
         Map<EventType, Long> eventsByType = monthEvents.stream()
                 .collect(Collectors.groupingBy(Event::getType, Collectors.counting()));
 
-        // Grouper par statut
         Map<EventStatus, Long> eventsByStatus = monthEvents.stream()
                 .collect(Collectors.groupingBy(Event::getStatus, Collectors.counting()));
 
-        log.info("Rapport mensuel généré : {} événements, {} participants",
-                totalEvents, totalParticipants);
+        log.info("✅ Rapport mensuel : {} événements, {} participants uniques", totalEvents, uniqueParticipants);
 
         return MonthlyReportDto.builder()
                 .month(month)
                 .year(year)
                 .totalEvents(totalEvents)
-                .totalParticipants(totalParticipants)
+                .totalParticipants((int) uniqueParticipants)
                 .eventsByType(eventsByType)
                 .eventsByStatus(eventsByStatus)
                 .events(eventMapper.toDtos(monthEvents))
                 .build();
     }
 
-
     @Override
     public Map<String, Map<String, Long>> getEventsByStatusAndMonth(int year) {
-        log.info("=== DÉBUT getEventsByStatusAndMonth pour l'année : {} ===", year);
+        log.info("📆 Chargement des événements par statut pour l'année {}", year);
 
-        // Récupérer TOUS les événements
-        List<Event> allEventsBeforeFilter = eventRepository.findAll();
-        log.info("Total événements dans la base : {}", allEventsBeforeFilter.size());
-
-        // Afficher les années des événements
-        allEventsBeforeFilter.forEach(e -> {
-            log.info("Événement '{}' : startDate={}, année={}, statut={}",
-                    e.getTitle(),
-                    e.getStartDate(),
-                    e.getStartDate() != null ? e.getStartDate().getYear() : "NULL",
-                    e.getStatus());
-        });
-
-        // Filtrer par année
-        List<Event> allEvents = allEventsBeforeFilter.stream()
-                .filter(e -> e.getStartDate() != null && e.getStartDate().getYear() == year)
-                .toList();
-
-        log.info("Événements après filtre année {} : {}", year, allEvents.size());
-
+        List<Event> events = eventRepository.findByYear(year);
         String[] months = {"Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                 "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"};
 
         Map<String, Map<String, Long>> result = new LinkedHashMap<>();
-
-        // Initialiser pour chaque statut
         for (EventStatus status : EventStatus.values()) {
-            Map<String, Long> monthsMap = new LinkedHashMap<>();
-            for (String month : months) {
-                monthsMap.put(month, 0L);
-            }
-            result.put(status.name(), monthsMap);
+            Map<String, Long> monthMap = Arrays.stream(months)
+                    .collect(Collectors.toMap(m -> m, m -> 0L, (a, b) -> a, LinkedHashMap::new));
+            result.put(status.name(), monthMap);
         }
 
-        // Compter les événements
-        for (Event event : allEvents) {
+        for (Event event : events) {
+            if (event.getStartDate() == null) continue;
             int monthIndex = event.getStartDate().getMonthValue() - 1;
+            if (monthIndex < 0 || monthIndex >= 12) continue;
             String monthName = months[monthIndex];
             String statusName = event.getStatus().name();
-
-            Map<String, Long> statusMonths = result.get(statusName);
-            statusMonths.put(monthName, statusMonths.get(monthName) + 1);
-
-            log.info("✓ Comptage : Événement '{}' → {} / {}",
-                    event.getTitle(), statusName, monthName);
+            result.get(statusName).merge(monthName, 1L, Long::sum);
         }
 
-        log.info("=== FIN getEventsByStatusAndMonth ===");
+        log.info("✅ Données mensuelles prêtes pour l'année {}", year);
         return result;
     }
-
-
 }

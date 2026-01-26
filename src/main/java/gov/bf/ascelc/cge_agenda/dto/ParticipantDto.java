@@ -31,7 +31,8 @@ public class ParticipantDto extends AuditEntityDto {
 
     private String phoneNumber;
     private String jobTitle;
-    private String organization;
+
+    private String structure;
 
    // @NotNull(message = "Le type de participant est obligatoire")
     private ParticipantType participantType;

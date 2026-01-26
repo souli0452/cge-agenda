@@ -69,7 +69,7 @@ public abstract class AuditEntity implements Serializable {
                 this.currentUserEmail = jwt.getClaim("email");
             }
         } catch (Exception e) {
-            // Log silencieux, ne pas bloquer la création
+
         }
     }
 }

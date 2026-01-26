@@ -20,6 +20,7 @@ public class DashboardStatsDto {
     private long totalEvents;
     private int upcomingEventsCount;
     private long totalParticipants;
+    private long totalInscriptions;
 
     // Répartition par statut
     private Map<EventStatus, Long> eventsByStatus;

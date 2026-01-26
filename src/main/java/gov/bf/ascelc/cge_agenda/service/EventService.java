@@ -91,4 +91,8 @@ public interface EventService {
     // Dans EventService
     boolean isParticipantAvailable(UUID participantId, LocalDate date,
                                    LocalTime startTime, LocalTime endTime);
+
+    List<EventDto> getEventsByParticipant(UUID participantId);
+
+
 }

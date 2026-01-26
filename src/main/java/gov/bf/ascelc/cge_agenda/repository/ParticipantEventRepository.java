@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection; // ✅ IMPORT MANQUANT
 import java.util.List;
 import java.util.UUID;
 
@@ -28,4 +29,15 @@ public interface ParticipantEventRepository extends JpaRepository<ParticipantEve
     void deleteByEventIdAndParticipantId(@Param("eventId") UUID eventId, @Param("participantId") UUID participantId);
 
     boolean existsByParticipantIdAndEventId(UUID participantId, UUID eventId);
+
+    // Compte les participants DISTINCTS (personnes uniques)
+    @Query("SELECT COUNT(DISTINCT pe.participant.id) FROM ParticipantEvent pe")
+    long countUniqueParticipants();
+
+    // Compte les participants uniques pour une liste d'événements
+    @Query("SELECT COUNT(DISTINCT pe.participant.id) FROM ParticipantEvent pe WHERE pe.event.id IN :eventIds")
+    long countUniqueParticipantsByEventIds(@Param("eventIds") Collection<UUID> eventIds);
+
+    // Compte le nombre total d'inscriptions (toutes les lignes dans ParticipantEvent)
+    long count();
 }

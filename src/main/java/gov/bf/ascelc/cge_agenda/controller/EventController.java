@@ -1,4 +1,3 @@
-
 package gov.bf.ascelc.cge_agenda.controller;
 
 import gov.bf.ascelc.cge_agenda.dto.EventDto;
@@ -10,11 +9,9 @@ import gov.bf.ascelc.cge_agenda.repository.EventRepository;
 import gov.bf.ascelc.cge_agenda.service.EmailService;
 import gov.bf.ascelc.cge_agenda.service.EventService;
 import gov.bf.ascelc.cge_agenda.service.PdfService;
-import gov.bf.ascelc.cge_agenda.utils.ApiUrls;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -45,18 +42,12 @@ public class EventController {
     // GESTION DES ÉVÉNEMENTS
     // ==========================================
 
-    /**
-     * Créer un événement (simple, multi-jours, ou avec horaires multiples)
-     */
     @PostMapping(CREATE_EVENT)
     public ResponseEntity<EventDto> create(@Valid @RequestBody EventDto eventDto) {
         EventDto event = eventService.create(eventDto);
         return new ResponseEntity<>(event, HttpStatus.CREATED);
     }
 
-    /**
-     * Mettre à jour un événement
-     */
     @PutMapping(UPDATE_EVENT)
     public ResponseEntity<EventDto> update(
             @PathVariable UUID id,
@@ -64,21 +55,16 @@ public class EventController {
     ) {
         EventDto updatedEvent = eventService.update(id, eventDto);
 
-        // Envoyer notification aux participants
         try {
             Event event = eventRepository.findById(id).orElseThrow();
             emailService.sendEventUpdateNotification(event);
         } catch (Exception e) {
-            // Ne pas bloquer si l'envoi échoue
-            System.err.println("Erreur notification : " + e.getMessage());
+            log.warn("Erreur notification : {}", e.getMessage());
         }
 
         return ResponseEntity.ok(updatedEvent);
     }
 
-    /**
-     * Annuler un événement
-     */
     @PatchMapping(CANCEL_EVENT)
     public ResponseEntity<EventDto> cancelEvent(
             @PathVariable UUID id,
@@ -88,9 +74,6 @@ public class EventController {
         return ResponseEntity.ok(event);
     }
 
-    /**
-     * Reporter un événement
-     */
     @PatchMapping(POSTPONE_EVENT)
     public ResponseEntity<EventDto> postponeEvent(
             @PathVariable UUID id,
@@ -101,9 +84,6 @@ public class EventController {
         return ResponseEntity.ok(event);
     }
 
-    /**
-     * Supprimer un événement
-     */
     @DeleteMapping(DELETE_EVENT)
     public ResponseEntity<Void> deleteById(@PathVariable UUID id) {
         eventService.delete(id);
@@ -114,27 +94,18 @@ public class EventController {
     // CONSULTATION D'ÉVÉNEMENTS
     // ==========================================
 
-    /**
-     * Lister tous les événements
-     */
     @GetMapping(GET_ALL_EVENT)
     public ResponseEntity<List<EventDto>> allEvents() {
         List<EventDto> events = eventService.allEvents();
         return ResponseEntity.ok(events);
     }
 
-    /**
-     * Voir les détails d'un événement
-     */
     @GetMapping(GET_EVENT_BY_ID)
     public ResponseEntity<EventDto> getEventById(@PathVariable UUID id) {
         EventDto event = eventService.getEventById(id);
         return ResponseEntity.ok(event);
     }
 
-    /**
-     * Rechercher des événements par critères
-     */
     @GetMapping(SEARCH_EVENTS)
     public ResponseEntity<List<EventDto>> searchEvents(
             @RequestParam(required = false) String keyword,
@@ -147,9 +118,6 @@ public class EventController {
         return ResponseEntity.ok(events);
     }
 
-    /**
-     * Consulter le calendrier mensuel
-     */
     @GetMapping(CALENDAR_MONTHLY)
     public ResponseEntity<List<EventDto>> getEventsByMonth(
             @PathVariable int year,
@@ -159,9 +127,6 @@ public class EventController {
         return ResponseEntity.ok(events);
     }
 
-    /**
-     * Récupérer les événements d'une période
-     */
     @GetMapping(EVENTS_BY_PERIOD)
     public ResponseEntity<List<EventDto>> getEventsByPeriod(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -175,23 +140,15 @@ public class EventController {
     // GESTION DES PARTICIPANTS
     // ==========================================
 
-    /**
-     * Ajouter un participant à un événement
-     */
     @PostMapping(ADD_PARTICIPANT_TO_EVENT)
     public ResponseEntity<EventDto> addParticipant(
             @PathVariable UUID eventId,
             @Valid @RequestBody ParticipantDto participantDto
     ) {
-        // Si participantDto contient un ID, c'est un participant existant
-        // Sinon, c'est un nouveau participant à créer
         EventDto event = eventService.addParticipant(eventId, participantDto);
         return ResponseEntity.ok(event);
     }
 
-    /**
-     * Retirer un participant d'un événement
-     */
     @DeleteMapping(REMOVE_PARTICIPANT_FROM_EVENT)
     public ResponseEntity<EventDto> removeParticipant(
             @PathVariable UUID eventId,
@@ -201,18 +158,19 @@ public class EventController {
         return ResponseEntity.ok(event);
     }
 
-    /**
-     * Consulter la liste des participants d'un événement
-     */
     @GetMapping(GET_EVENT_PARTICIPANTS)
     public ResponseEntity<List<ParticipantDto>> getEventParticipants(@PathVariable UUID eventId) {
         List<ParticipantDto> participants = eventService.getEventParticipants(eventId);
         return ResponseEntity.ok(participants);
     }
 
-    /**
-     * Importer une liste de participants (CSV/Excel)
-     */
+
+    @GetMapping("/participants/{participantId}/events")
+    public ResponseEntity<List<EventDto>> getEventsByParticipant(@PathVariable UUID participantId) {
+        List<EventDto> events = eventService.getEventsByParticipant(participantId);
+        return ResponseEntity.ok(events);
+    }
+
     @PostMapping(IMPORT_PARTICIPANTS)
     public ResponseEntity<List<ParticipantDto>> importParticipants(
             @PathVariable UUID eventId,
@@ -236,12 +194,6 @@ public class EventController {
         return ResponseEntity.ok(participants);
     }
 
-    /**
-     * Génère la liste d'émargement Excel pour un événement
-     *
-     * @param id L'UUID de l'événement
-     * @return Fichier Excel téléchargeable
-     */
     @GetMapping(GENERATE_ATTENDANCE_SHEET)
     public ResponseEntity<byte[]> generateAttendanceSheet(@PathVariable UUID id) {
         log.info("Génération de la liste d'émargement PDF pour l'événement : {}", id);
@@ -257,9 +209,7 @@ public class EventController {
                 .headers(headers)
                 .body(pdfFile);
     }
-    /**
-     * Génère le calendrier PDF d'un mois
-     */
+
     @GetMapping("/calendar/pdf/{year}/{month}")
     public ResponseEntity<byte[]> generateCalendarPDF(
             @PathVariable int year,
@@ -279,9 +229,6 @@ public class EventController {
                 .body(pdfFile);
     }
 
-    /**
-     * Génère le compte-rendu PDF d'un événement
-     */
     @GetMapping("/compte-rendu/{id}")
     public ResponseEntity<byte[]> generateMeetingReport(@PathVariable UUID id) {
         log.info("Génération du compte-rendu pour l'événement : {}", id);

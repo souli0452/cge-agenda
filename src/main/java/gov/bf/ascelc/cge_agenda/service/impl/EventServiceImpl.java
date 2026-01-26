@@ -1,10 +1,7 @@
 package gov.bf.ascelc.cge_agenda.service.impl;
 
 import gov.bf.ascelc.cge_agenda.dto.*;
-import gov.bf.ascelc.cge_agenda.entities.Event;
-import gov.bf.ascelc.cge_agenda.entities.Participant;
-import gov.bf.ascelc.cge_agenda.entities.ParticipantEvent;
-import gov.bf.ascelc.cge_agenda.entities.Schedule;
+import gov.bf.ascelc.cge_agenda.entities.*;
 import gov.bf.ascelc.cge_agenda.enums.EventStatus;
 import gov.bf.ascelc.cge_agenda.enums.EventType;
 import gov.bf.ascelc.cge_agenda.mapper.EventMapper;
@@ -85,25 +82,40 @@ public class EventServiceImpl implements EventService {
     @Transactional(rollbackFor = Exception.class)
     public EventDto create(EventDto dto) {
         log.info("Début création événement : {}", dto.getTitle());
-
         validateEventDates(dto.getStartDate(), dto.getEndDate());
         validateScheduleMode(dto);
 
         Event event = eventMapper.toEntity(dto);
         event.setCreatedAt(LocalDateTime.now());
-
         event = eventRepository.save(event);
-        log.info("Événement créé : ID = {}", event.getId());
 
-        List<Schedule> schedules = createSchedules(event, dto);
-        log.info("{} horaires créés", schedules.size());
+        try {
+            if (dto.getFiles() != null && !dto.getFiles().isEmpty()) {
+                List<File> savedFiles = new ArrayList<>();
+                for (FileDto fileDto : dto.getFiles()) {
+                    File file = eventMapper.toFileEntity(fileDto);
+                    file.setEvent(event);
+                    file.setCreatedAt(LocalDateTime.now());
+                    savedFiles.add(file);
+                }
+                event.setFiles(new HashSet<>(savedFiles));
+            }
 
-        if (dto.getParticipants() != null && !dto.getParticipants().isEmpty()) {
-            processParticipants(event, dto.getParticipants(), schedules);
+            List<Schedule> schedules = createSchedules(event, dto);
+            if (dto.getParticipants() != null && !dto.getParticipants().isEmpty()) {
+                processParticipants(event, dto.getParticipants(), schedules);
+            }
+
+            event = eventRepository.save(event);
+            log.info("Événement créé avec succès : ID = {}", event.getId());
+            return enrichWithStructures(eventMapper.toDto(event), event);
+        } catch (Exception e) {
+            log.error("❌ Échec création événement – rollback : {}", e.getMessage());
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Échec de la création de l'événement : " + e.getMessage()
+            );
         }
-
-        log.info("Événement créé avec succès !");
-        return getEventById(event.getId());
     }
 
     // ==========================================
@@ -258,14 +270,16 @@ public class EventServiceImpl implements EventService {
     @Transactional(readOnly = true)
     public List<EventDto> getEventsByDateRange(LocalDate startDate, LocalDate endDate) {
         log.info("Récupération des événements entre {} et {}", startDate, endDate);
-
         List<Event> events = eventRepository.findAll().stream()
                 .filter(e -> !e.getEndDate().isBefore(startDate) &&
                         !e.getStartDate().isAfter(endDate))
                 .collect(Collectors.toList());
-
         log.info("{} événements trouvés", events.size());
-        return eventMapper.toDtos(events);
+
+
+        return events.stream()
+                .map(event -> enrichWithStructures(eventMapper.toDto(event), event))
+                .toList();
     }
 
     // ==========================================
@@ -445,7 +459,6 @@ public class EventServiceImpl implements EventService {
                         "Événement non trouvé avec l'ID : " + eventId
                 ));
 
-        // ✅ CORRECTION : Convertir Set en List
         List<ParticipantEvent> participantEvents = new ArrayList<>(event.getParticipantEvents());
 
         try {
@@ -502,7 +515,7 @@ public class EventServiceImpl implements EventService {
     // ==========================================
 
     private void addPdfHeader(Document document, PdfFont fontBold, PdfFont fontNormal) throws Exception {
-        // ✅ Utiliser le nom complet pour éviter conflit avec jakarta.persistence.Table
+
         com.itextpdf.layout.element.Table headerTable = new com.itextpdf.layout.element.Table(
                 UnitValue.createPercentArray(new float[]{35, 30, 35}));
         headerTable.setWidth(UnitValue.createPercentValue(100));
@@ -648,7 +661,7 @@ public class EventServiceImpl implements EventService {
 
         table.addHeaderCell(createHeaderCell("N°", fontBold, headerColor));
         table.addHeaderCell(createHeaderCell("Nom et Prénoms", fontBold, headerColor));
-        table.addHeaderCell(createHeaderCell("Organisation / Fonction", fontBold, headerColor));
+        table.addHeaderCell(createHeaderCell("Structure / Fonction", fontBold, headerColor));
         table.addHeaderCell(createHeaderCell("Signature", fontBold, headerColor));
 
         int index = 1;
@@ -661,8 +674,8 @@ public class EventServiceImpl implements EventService {
             table.addCell(createDataCell(fullName, fontNormal, TextAlignment.LEFT));
 
             String orgFunction = "";
-            if (participant.getOrganization() != null) {
-                orgFunction = participant.getOrganization();
+            if (participant.getStructure() != null) {
+                orgFunction = participant.getStructure();
             }
             if (participant.getJobTitle() != null) {
                 if (!orgFunction.isEmpty()) orgFunction += "\n";
@@ -780,35 +793,39 @@ public class EventServiceImpl implements EventService {
         return true;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<EventDto> getEventsByParticipant(UUID participantId) {
+        List<Event> events = eventRepository.findEventsByParticipantId(participantId);
+        return events.stream()
+                .map(event -> enrichWithStructures(eventMapper.toDto(event), event))
+                .toList();
+    }
+
     // ==========================================
     // MÉTHODES UTILITAIRES PRIVÉES
     // ==========================================
 
     private List<ParticipantDto> parseCSV(byte[] fileContent) throws Exception {
         List<ParticipantDto> participants = new ArrayList<>();
-
         try (CSVParser parser = CSVFormat.DEFAULT
                 .builder()
                 .setHeader()
                 .setSkipHeaderRecord(true)
                 .build()
-                .parse(new InputStreamReader(new ByteArrayInputStream(fileContent),
-                        StandardCharsets.UTF_8))) {
-
+                .parse(new InputStreamReader(new ByteArrayInputStream(fileContent), StandardCharsets.UTF_8))) {
             for (CSVRecord record : parser) {
                 ParticipantDto dto = ParticipantDto.builder()
                         .lastName(record.get("Nom"))
                         .firstName(record.get("Prénom"))
                         .email(record.get("Email"))
                         .phoneNumber(record.get("Téléphone"))
-                        .organization(record.get("Organisation"))
+                        .structure(record.get("Structure"))
                         .jobTitle(record.get("Fonction"))
                         .build();
-
                 participants.add(dto);
             }
         }
-
         return participants;
     }
 
@@ -826,7 +843,7 @@ public class EventServiceImpl implements EventService {
                             .firstName(getCellValue(row.getCell(1)))
                             .email(getCellValue(row.getCell(2)))
                             .phoneNumber(getCellValue(row.getCell(3)))
-                            .organization(getCellValue(row.getCell(4)))
+                            .structure(getCellValue(row.getCell(4)))
                             .jobTitle(getCellValue(row.getCell(5)))
                             .build();
 
@@ -1080,26 +1097,31 @@ public class EventServiceImpl implements EventService {
                 ));
     }
 
+
     @Override
     @Transactional(readOnly = true)
     public List<EventDto> allEvents() {
-        List<Event> events = eventRepository.findAll();
-        log.info("Récupération de {} événements", events.size());
-        return eventMapper.toDtos(events);
+        try {
+
+            List<Event> events = eventRepository.findAllWithParticipantsOrderedByStatusAndProximity();
+            return events.stream()
+                    .map(event -> enrichWithStructures(eventMapper.toDto(event), event))
+                    .toList();
+        } catch (Exception e) {
+            log.error("Erreur lors du chargement des événements", e);
+            throw new RuntimeException("Impossible de charger les événements");
+        }
     }
 
     @Override
     @Transactional(readOnly = true)
     public EventDto getEventById(UUID id) {
-        return eventRepository.findById(id)
-                .map(event -> {
-                    log.info("Événement trouvé : ID = {}", id);
-                    return eventMapper.toDto(event);
-                })
+        Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Événement non trouvé avec l'ID : " + id
                 ));
+        return enrichWithStructures(eventMapper.toDto(event), event);
     }
 
     @Override
@@ -1150,4 +1172,19 @@ public class EventServiceImpl implements EventService {
         eventRepository.deleteById(id);
         log.info("✓ Événement supprimé avec succès : ID = {}", id);
     }
+    private EventDto enrichWithStructures(EventDto dto, Event event) {
+        dto.setStructures(extractUniqueStructures(event));
+        return dto;
+    }
+
+    private List<String> extractUniqueStructures(Event event) {
+        return event.getParticipantEvents().stream()
+                .map(pe -> pe.getParticipant().getStructure())
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+
 }

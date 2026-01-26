@@ -1,8 +1,10 @@
 package gov.bf.ascelc.cge_agenda.mapper;
 
 import gov.bf.ascelc.cge_agenda.dto.EventDto;
+import gov.bf.ascelc.cge_agenda.dto.FileDto;
 import gov.bf.ascelc.cge_agenda.dto.ParticipantDto;
 import gov.bf.ascelc.cge_agenda.entities.Event;
+import gov.bf.ascelc.cge_agenda.entities.File;
 import gov.bf.ascelc.cge_agenda.entities.ParticipantEvent;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -42,7 +44,7 @@ public interface EventMapper {
                         .lastName(pe.getParticipant().getLastName())
                         .email(pe.getParticipant().getEmail())
                         .phoneNumber(pe.getParticipant().getPhoneNumber())
-                        .organization(pe.getParticipant().getOrganization())
+                        .structure(pe.getParticipant().getStructure())
                         .jobTitle(pe.getParticipant().getJobTitle())
                         .participantType(pe.getParticipant().getParticipantType())
                         .createdAt(pe.getParticipant().getCreatedAt())
@@ -73,6 +75,8 @@ public interface EventMapper {
     List<EventDto> toDtos(List<Event> events);
 
     List<Event> toEntities(List<EventDto> eventDtos);
+
+    File toFileEntity(FileDto dto);
 
     // ==========================================
     // Update

@@ -18,9 +18,9 @@ import java.util.Set;
 @AllArgsConstructor
 @Table(name = "participant", indexes = {
         @Index(name = "idx_participant_email", columnList = "email"),
-        @Index(name = "idx_participant_type", columnList = "participant_type")
+        @Index(name = "idx_participant_type", columnList = "participant_type"),
+        @Index(name = "idx_participant_structure", columnList = "structure") 
 })
-
 public class Participant extends AuditEntity {
 
     @Column(name = "last_name", nullable = false, length = 100)
@@ -38,8 +38,9 @@ public class Participant extends AuditEntity {
     @Column(name = "job_title", length = 255)
     private String jobTitle;
 
-    @Column(name = "organization", length = 255)
-    private String organization;
+
+    @Column(name = "structure", length = 255)
+    private String structure;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "participant_type", nullable = false, length = 50)
@@ -48,7 +49,6 @@ public class Participant extends AuditEntity {
     @OneToMany(mappedBy = "participant", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private Set<ParticipantEvent> participantEvents = new HashSet<>();
-
 
     /**
      * Obtient le nom complet du participant

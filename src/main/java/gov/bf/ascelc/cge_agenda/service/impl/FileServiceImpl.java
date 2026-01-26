@@ -28,8 +28,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.text.Normalizer;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -45,248 +44,238 @@ public class FileServiceImpl implements FileService {
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
 
+    // ✅ Liste blanche des extensions autorisées (sécurité)
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+            "jpg", "jpeg", "png", "gif", "txt", "zip", "rar"
+    );
+
+    // ✅ Taille maximale par fichier (10 Mo)
+    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
+
     @Override
     public FileDto uploadFile(UUID eventId, MultipartFile file, String description) {
-        log.info("Upload de fichier pour l'événement : {}", eventId);
-
-        Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Event not found with ID: " + eventId
-                ));
-
-        if (file.isEmpty()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Cannot upload empty file"
-            );
-        }
+        log.info("🔄 Upload de fichier pour l'événement : {}", eventId);
+        validateUploadRequest(eventId, file);
 
         try {
-            // Créer uploads/
-            Path uploadPath = Paths.get(uploadDir);
-            if (!Files.exists(uploadPath)) {
-                Files.createDirectories(uploadPath);
-                log.info("Dossier racine créé : {}", uploadPath.toAbsolutePath());
-            }
-
-            //Créer uploads/events/
-            Path eventsPath = uploadPath.resolve("events");
-            if (!Files.exists(eventsPath)) {
-                Files.createDirectories(eventsPath);
-                log.info("Dossier events créé : {}", eventsPath.toAbsolutePath());
-            }
-
-            //Créer le nom de dossier : uuid-titre (avec normalisation des accents)
-            String eventFolderName = createEventFolderName(event);
-            Path eventPath = eventsPath.resolve(eventFolderName);
-
-            if (!Files.exists(eventPath)) {
-                Files.createDirectories(eventPath);
-                log.info("Dossier événement créé : {}", eventFolderName);
-            } else {
-                log.info("Dossier événement existant : {}", eventFolderName);
-            }
-
-            //Préparer le nom du fichier
-            String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
-
-            // Extraire l'extension
-            String extension = "";
-            int dotIndex = originalFilename.lastIndexOf('.');
-            if (dotIndex > 0) {
-                extension = originalFilename.substring(dotIndex);
-            }
-
-            // Nettoyer le nom (sans extension)
-            String nameWithoutExt = dotIndex > 0 ?
-                    originalFilename.substring(0, dotIndex) : originalFilename;
-
-            // Normaliser le nom du fichier aussi (enlever les accents)
-            String normalizedName = Normalizer.normalize(nameWithoutExt, Normalizer.Form.NFD)
-                    .replaceAll("\\p{M}", "");
-
-            String cleanName = normalizedName.replaceAll("[^a-zA-Z0-9_-]", "_");
-
-            // Générer UUID pour le fichier
-            UUID fileId = UUID.randomUUID();
-            String storedFilename = fileId.toString().substring(0, 8) + "_" + cleanName + extension;
-
+            Path eventPath = createEventDirectory(eventId);
+            String storedFilename = generateSecureFilename(file.getOriginalFilename());
             Path targetLocation = eventPath.resolve(storedFilename);
 
-            //Copier le fichier
             Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
-            log.info("Fichier enregistré : {}", targetLocation.toAbsolutePath());
+            log.info("✅ Fichier enregistré : {}", targetLocation.toAbsolutePath());
 
-            //Créer l'entité File
-            File fileEntity = File.builder()
-                    .id(fileId)
-                    .fileName(originalFilename)  // Nom original pour l'affichage
-                    .filePath(targetLocation.toString())
-                    .fileType(file.getContentType())
-                    .fileSize(file.getSize())
-                    .description(description)
-                    .event(event)
-                    .createdAt(LocalDateTime.now())
-                    .build();
-
+            File fileEntity = buildFileEntity(eventId, file, description, targetLocation.toString());
             fileEntity = fileRepository.save(fileEntity);
-            log.info("Fichier uploadé : {} → {}", originalFilename, storedFilename);
-            log.info("Chemin complet : {}", targetLocation.toAbsolutePath());
 
-            //Envoyer notification email
-            try {
-                emailService.sendNewDocumentNotification(event, fileEntity);
-                log.info("Notification email envoyée");
-            } catch (Exception e) {
-                log.error("Erreur notification email : {}", e.getMessage());
-            }
-
+            sendEmailNotification(eventId, fileEntity);
             return fileMapper.toDto(fileEntity);
 
         } catch (IOException e) {
-            log.error("Erreur lors de l'upload : {}", e.getMessage());
+            log.error("❌ Erreur I/O lors de l'upload : {}", e.getMessage());
             throw new ResponseStatusException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Could not upload file: " + e.getMessage()
+                    "Échec de l'enregistrement du fichier"
             );
         }
     }
 
-    /**
-     * SOLUTION 1 : Crée un nom de dossier hybride avec NORMALISATION des accents
-     *
-     * Exemples de transformation :
-     * - "Réunion Budget 2025" → "7d59c9dd-Reunion_Budget_2025"
-     * - "Séminaire été" → "3f8e2a1b-Seminaire_ete"
-     * - "Conférence française" → "8c9d0e1f-Conference_francaise"
-     *
-     * @param event L'événement pour lequel créer le nom de dossier
-     * @return Nom du dossier au format : {uuid-8chars}-{titre-normalise}
-     */
+    // ==========================================
+    // ✅ VALIDATIONS SÉCURISÉES
+    // ==========================================
+
+    private void validateUploadRequest(UUID eventId, MultipartFile file) {
+        if (!eventRepository.existsById(eventId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Événement introuvable");
+        }
+
+        if (file == null || file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Fichier vide ou manquant");
+        }
+
+        if (file.getSize() > MAX_FILE_SIZE) {
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Fichier trop volumineux (max 10 Mo)");
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || originalFilename.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nom de fichier invalide");
+        }
+
+
+        String extension = extractExtension(originalFilename).toLowerCase();
+        if (!ALLOWED_EXTENSIONS.contains(extension)) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    "Type de fichier non autorisé : " + extension
+            );
+        }
+
+        if (originalFilename.contains("..") || originalFilename.contains("/")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Caractères illégaux dans le nom de fichier");
+        }
+    }
+
+    // ==========================================
+    // ✅ GESTION DES EXTENSIONS
+    // ==========================================
+
+    private String extractExtension(String filename) {
+        int dotIndex = filename.lastIndexOf('.');
+        // ✅ Retourne l'extension SANS le point (ex: "pdf" au lieu de ".pdf")
+        return (dotIndex > 0 && dotIndex < filename.length() - 1)
+                ? filename.substring(dotIndex + 1)
+                : "";
+    }
+
+    // ==========================================
+    // ✅ GESTION DES DOSSIERS
+    // ==========================================
+
+    private Path createEventDirectory(UUID eventId) throws IOException {
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Événement introuvable"));
+
+        Path uploadPath = Paths.get(uploadDir, "events");
+        Files.createDirectories(uploadPath);
+
+        String folderName = createEventFolderName(event);
+        Path eventPath = uploadPath.resolve(folderName);
+        Files.createDirectories(eventPath);
+
+        log.debug("📁 Dossier événement créé : {}", eventPath);
+        return eventPath;
+    }
+
     private String createEventFolderName(Event event) {
-        // 8 premiers caractères de l'UUID
         String shortUuid = event.getId().toString().substring(0, 8);
-
-        // Normaliser les accents
-        // NFD = Decompose (é devient e + accent combiné)
-        // \\p{M} = Tous les accents combinés
-        // Résultat : é → e, à → a, ç → c, etc.
-        String normalizedTitle = Normalizer.normalize(event.getTitle(), Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "");
-
-        log.debug("Normalisation : '{}' → '{}'", event.getTitle(), normalizedTitle);
-
-        // Nettoyer (garder seulement lettres, chiffres, _ et -)
+        String normalizedTitle = normalizeString(event.getTitle());
         String cleanTitle = normalizedTitle
-                .replaceAll("[^a-zA-Z0-9_-]", "_")  // Remplacer caractères spéciaux par _
-                .replaceAll("_+", "_")               // Éviter double underscore
-                .replaceAll("^_|_$", "");            // Enlever _ au début/fin
+                .replaceAll("[^a-zA-Z0-9_-]", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_|_$", "");
 
-        // Limiter à 50 caractères
         if (cleanTitle.length() > 50) {
             cleanTitle = cleanTitle.substring(0, 50);
         }
 
-        String folderName = shortUuid + "-" + cleanTitle;
-        log.debug("Nom de dossier généré : {} (original: {})", folderName, event.getTitle());
-
-        return folderName;
+        return shortUuid + "-" + cleanTitle;
     }
+
+    // ==========================================
+    // ✅ GESTION DES FICHIERS
+    // ==========================================
+
+    private String generateSecureFilename(String originalFilename) {
+        String extension = extractExtension(originalFilename);
+        String nameWithoutExt = (extension.isEmpty())
+                ? originalFilename
+                : originalFilename.substring(0, originalFilename.lastIndexOf('.'));
+
+        String cleanName = normalizeString(nameWithoutExt)
+                .replaceAll("[^a-zA-Z0-9_-]", "_");
+
+        String randomSuffix = UUID.randomUUID().toString().substring(0, 8);
+        return randomSuffix + "_" + cleanName + (extension.isEmpty() ? "" : "." + extension);
+    }
+
+    private String normalizeString(String input) {
+        return Normalizer.normalize(input, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+    }
+
+    private File buildFileEntity(UUID eventId, MultipartFile file, String description, String filePath) {
+        return File.builder()
+                .fileName(file.getOriginalFilename())
+                .filePath(filePath)
+                .fileType(file.getContentType())
+                .fileSize(file.getSize())
+                .description(description != null ? description : "")
+                .event(eventRepository.getReferenceById(eventId))
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
+    private void sendEmailNotification(UUID eventId, File fileEntity) {
+        try {
+            emailService.sendNewDocumentNotification(
+                    eventRepository.getReferenceById(eventId),
+                    fileEntity
+            );
+            log.info("📧 Notification email envoyée pour le fichier : {}", fileEntity.getFileName());
+        } catch (Exception e) {
+            log.warn("⚠️ Échec de la notification email : {}", e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // ✅ MÉTHODES DE LECTURE/ÉCRITURE
+    // ==========================================
 
     @Override
     @Transactional(readOnly = true)
     public Resource downloadFile(UUID fileId) {
-        log.info("Téléchargement du fichier : {}", fileId);
-
+        log.info("⬇️ Téléchargement du fichier : {}", fileId);
         File file = fileRepository.findById(fileId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "File not found with ID: " + fileId
-                ));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Fichier introuvable"));
 
         try {
             Path filePath = Paths.get(file.getFilePath());
             Resource resource = new UrlResource(filePath.toUri());
 
             if (resource.exists() && resource.isReadable()) {
-                log.info("Fichier téléchargé : {}", file.getFileName());
+                log.info("✅ Fichier téléchargé : {}", file.getFileName());
                 return resource;
-            } else {
-                throw new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "File not found or not readable: " + file.getFileName()
-                );
             }
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Fichier introuvable sur le disque");
         } catch (MalformedURLException e) {
-            log.error("Erreur téléchargement : {}", e.getMessage());
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Error downloading file: " + e.getMessage()
-            );
+            log.error("❌ URL invalide pour le fichier : {}", file.getFilePath());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Erreur de téléchargement");
         }
     }
 
     @Override
     public void deleteFile(UUID fileId) {
-        log.info("Suppression du fichier : {}", fileId);
-
+        log.info("🗑️ Suppression du fichier : {}", fileId);
         File file = fileRepository.findById(fileId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "File not found with ID: " + fileId
-                ));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Fichier introuvable"));
 
         try {
-            // Supprimer le fichier physique
             Path filePath = Paths.get(file.getFilePath());
-            Files.deleteIfExists(filePath);
-            log.info("Fichier physique supprimé");
+            boolean deleted = Files.deleteIfExists(filePath);
+            if (deleted) {
+                log.info("✅ Fichier physique supprimé : {}", file.getFileName());
+            }
 
-            // Supprimer l'entrée en base
             fileRepository.delete(file);
-            log.info("Fichier supprimé de la base : {}", file.getFileName());
-
+            log.info("✅ Fichier supprimé de la base : {}", file.getFileName());
         } catch (IOException e) {
-            log.error("Erreur suppression : {}", e.getMessage());
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Error deleting file: " + e.getMessage()
-            );
+            log.error("❌ Erreur lors de la suppression physique : {}", e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Échec de la suppression");
         }
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<FileDto> getFilesByEvent(UUID eventId) {
-        log.info("Récupération des fichiers de l'événement : {}", eventId);
-
         if (!eventRepository.existsById(eventId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Event not found with ID: " + eventId
-            );
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Événement introuvable");
         }
 
         List<File> files = fileRepository.findByEventId(eventId);
-        log.info("{} fichiers trouvés", files.size());
-
+        log.info("📚 {} fichiers trouvés pour l'événement {}", files.size(), eventId);
         return fileMapper.toDtos(files);
     }
 
     @Override
     @Transactional(readOnly = true)
     public FileDto getFileById(UUID fileId) {
-        log.info("Récupération du fichier : {}", fileId);
-
         return fileRepository.findById(fileId)
                 .map(file -> {
-                    log.info("Fichier trouvé : {}", file.getFileName());
+                    log.info("🔍 Fichier trouvé : {}", file.getFileName());
                     return fileMapper.toDto(file);
                 })
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "File not found with ID: " + fileId
-                ));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Fichier introuvable"));
     }
 }
