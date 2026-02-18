@@ -451,7 +451,7 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional(readOnly = true)
     public byte[] generateAttendanceSheet(UUID eventId) {
-        log.info("📄 Génération de la liste d'émargement PDF pour l'événement : {}", eventId);
+        log.info("📄 Génération de la liste participant PDF pour l'événement : {}", eventId);
 
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -477,7 +477,7 @@ public class EventServiceImpl implements EventService {
             document.add(new Paragraph("\n"));
 
             // TITRE
-            Paragraph title = new Paragraph("LISTE D'ÉMARGEMENT")
+            Paragraph title = new Paragraph("LISTE PARTICIPANT")
                     .setFont(fontBold)
                     .setFontSize(16)
                     .setTextAlignment(TextAlignment.CENTER)
@@ -498,14 +498,14 @@ public class EventServiceImpl implements EventService {
 
             document.close();
 
-            log.info("✅ Liste d'émargement PDF générée avec succès");
+            log.info("✅ Liste participant PDF générée avec succès");
             return baos.toByteArray();
 
         } catch (Exception e) {
-            log.error("❌ Erreur lors de la génération de la liste d'émargement PDF : {}", e.getMessage());
+            log.error("❌ Erreur lors de la génération de la liste participant PDF : {}", e.getMessage());
             throw new ResponseStatusException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Erreur lors de la génération de la liste d'émargement : " + e.getMessage()
+                    "Erreur lors de la génération de la liste participant : " + e.getMessage()
             );
         }
     }
