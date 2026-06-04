@@ -17,7 +17,6 @@ import java.util.UUID;
 @Repository
 public interface EventRepository extends JpaRepository<Event, UUID> {
 
-    // Chargement avec fichiers (pour génération PDF, etc.)
     @EntityGraph(attributePaths = { "files" })
     Optional<Event> findWithFilesById(UUID id);
 
@@ -38,7 +37,6 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     @Query("SELECT e FROM Event e WHERE YEAR(e.startDate) = :year ORDER BY e.startDate DESC")
     List<Event> findByYear(@Param("year") int year);
 
-    // TRI PAR STATUT + PROXIMITÉ (FUTURS EN PREMIER, PUIS PASSÉS)
     @Query("SELECT e FROM Event e " +
             "LEFT JOIN FETCH e.participantEvents pe " +
             "LEFT JOIN FETCH pe.participant " +
@@ -49,7 +47,6 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
             "e.startDate DESC")
     List<Event> findAllWithParticipantsOrderedByStatusAndProximity();
 
-    // Recherche dynamique (filtrage combiné)
     @Query("SELECT e FROM Event e WHERE " +
             "(:keyword IS NULL OR LOWER(e.title) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(e.description) LIKE LOWER(CONCAT('%', :keyword, '%'))) AND " +
             "(:type IS NULL OR e.type = :type) AND " +
@@ -77,4 +74,6 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
 
     @Query("SELECT DISTINCT pe.event FROM ParticipantEvent pe WHERE pe.participant.id = :participantId")
     List<Event> findEventsByParticipantId(@Param("participantId") UUID participantId);
+
+    List<Event> findByStartDateAndStatus(LocalDate startDate, EventStatus status);
 }
