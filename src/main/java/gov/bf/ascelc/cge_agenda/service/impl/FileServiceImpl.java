@@ -44,13 +44,11 @@ public class FileServiceImpl implements FileService {
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
 
-    // ✅ Liste blanche des extensions autorisées (sécurité)
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
             "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
             "jpg", "jpeg", "png", "gif", "txt", "zip", "rar"
     );
 
-    // ✅ Taille maximale par fichier (10 Mo)
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
 
     @Override
@@ -73,17 +71,13 @@ public class FileServiceImpl implements FileService {
             return fileMapper.toDto(fileEntity);
 
         } catch (IOException e) {
-            log.error("❌ Erreur I/O lors de l'upload : {}", e.getMessage());
+            log.error("Erreur I/O lors de l'upload : {}", e.getMessage());
             throw new ResponseStatusException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
                     "Échec de l'enregistrement du fichier"
             );
         }
     }
-
-    // ==========================================
-    // ✅ VALIDATIONS SÉCURISÉES
-    // ==========================================
 
     private void validateUploadRequest(UUID eventId, MultipartFile file) {
         if (!eventRepository.existsById(eventId)) {
@@ -117,20 +111,17 @@ public class FileServiceImpl implements FileService {
         }
     }
 
-    // ==========================================
-    // ✅ GESTION DES EXTENSIONS
-    // ==========================================
+
 
     private String extractExtension(String filename) {
         int dotIndex = filename.lastIndexOf('.');
-        // ✅ Retourne l'extension SANS le point (ex: "pdf" au lieu de ".pdf")
         return (dotIndex > 0 && dotIndex < filename.length() - 1)
                 ? filename.substring(dotIndex + 1)
                 : "";
     }
 
     // ==========================================
-    // ✅ GESTION DES DOSSIERS
+    // GESTION DES DOSSIERS
     // ==========================================
 
     private Path createEventDirectory(UUID eventId) throws IOException {
@@ -144,7 +135,7 @@ public class FileServiceImpl implements FileService {
         Path eventPath = uploadPath.resolve(folderName);
         Files.createDirectories(eventPath);
 
-        log.debug("📁 Dossier événement créé : {}", eventPath);
+        log.debug("Dossier événement créé : {}", eventPath);
         return eventPath;
     }
 
@@ -164,7 +155,7 @@ public class FileServiceImpl implements FileService {
     }
 
     // ==========================================
-    // ✅ GESTION DES FICHIERS
+    // GESTION DES FICHIERS
     // ==========================================
 
     private String generateSecureFilename(String originalFilename) {
@@ -199,24 +190,17 @@ public class FileServiceImpl implements FileService {
 
     private void sendEmailNotification(UUID eventId, File fileEntity) {
         try {
-            emailService.sendNewDocumentNotification(
-                    eventRepository.getReferenceById(eventId),
-                    fileEntity
-            );
-            log.info("📧 Notification email envoyée pour le fichier : {}", fileEntity.getFileName());
+            emailService.sendNewDocumentNotification(eventId, fileEntity.getId());
+            log.info("Notification email envoyée pour le fichier : {}", fileEntity.getFileName());
         } catch (Exception e) {
-            log.warn("⚠️ Échec de la notification email : {}", e.getMessage());
+            log.warn("Échec de la notification email : {}", e.getMessage());
         }
     }
-
-    // ==========================================
-    // ✅ MÉTHODES DE LECTURE/ÉCRITURE
-    // ==========================================
 
     @Override
     @Transactional(readOnly = true)
     public Resource downloadFile(UUID fileId) {
-        log.info("⬇️ Téléchargement du fichier : {}", fileId);
+        log.info("Téléchargement du fichier : {}", fileId);
         File file = fileRepository.findById(fileId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Fichier introuvable"));
 
@@ -225,19 +209,19 @@ public class FileServiceImpl implements FileService {
             Resource resource = new UrlResource(filePath.toUri());
 
             if (resource.exists() && resource.isReadable()) {
-                log.info("✅ Fichier téléchargé : {}", file.getFileName());
+                log.info("Fichier téléchargé : {}", file.getFileName());
                 return resource;
             }
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Fichier introuvable sur le disque");
         } catch (MalformedURLException e) {
-            log.error("❌ URL invalide pour le fichier : {}", file.getFilePath());
+            log.error("URL invalide pour le fichier : {}", file.getFilePath());
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Erreur de téléchargement");
         }
     }
 
     @Override
     public void deleteFile(UUID fileId) {
-        log.info("🗑️ Suppression du fichier : {}", fileId);
+        log.info(" Suppression du fichier : {}", fileId);
         File file = fileRepository.findById(fileId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Fichier introuvable"));
 
@@ -245,11 +229,11 @@ public class FileServiceImpl implements FileService {
             Path filePath = Paths.get(file.getFilePath());
             boolean deleted = Files.deleteIfExists(filePath);
             if (deleted) {
-                log.info("✅ Fichier physique supprimé : {}", file.getFileName());
+                log.info("Fichier physique supprimé : {}", file.getFileName());
             }
 
             fileRepository.delete(file);
-            log.info("✅ Fichier supprimé de la base : {}", file.getFileName());
+            log.info("Fichier supprimé de la base : {}", file.getFileName());
         } catch (IOException e) {
             log.error("❌ Erreur lors de la suppression physique : {}", e.getMessage());
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Échec de la suppression");
@@ -264,7 +248,7 @@ public class FileServiceImpl implements FileService {
         }
 
         List<File> files = fileRepository.findByEventId(eventId);
-        log.info("📚 {} fichiers trouvés pour l'événement {}", files.size(), eventId);
+        log.info("{} fichiers trouvés pour l'événement {}", files.size(), eventId);
         return fileMapper.toDtos(files);
     }
 

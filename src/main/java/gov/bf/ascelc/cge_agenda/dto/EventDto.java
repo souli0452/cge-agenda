@@ -64,12 +64,18 @@ public class EventDto extends AuditEntityDto {
 
     private List<String> structures;
 
+
     public boolean isGlobalScheduleMode() {
-        return (schedules == null || schedules.isEmpty()) &&
-                globalStartTime != null && globalEndTime != null;
+        return globalStartTime != null
+                && globalEndTime != null
+                && (schedules == null || schedules.isEmpty());
     }
 
+
     public boolean isCustomScheduleMode() {
-        return schedules != null && !schedules.isEmpty();
+        return schedules != null
+                && !schedules.isEmpty()
+                && globalStartTime == null
+                && globalEndTime == null;
     }
 }

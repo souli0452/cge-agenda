@@ -10,10 +10,10 @@ import gov.bf.ascelc.cge_agenda.repository.EventRepository;
 import gov.bf.ascelc.cge_agenda.repository.ParticipantEventRepository;
 import gov.bf.ascelc.cge_agenda.repository.ParticipantRepository;
 import gov.bf.ascelc.cge_agenda.repository.ScheduleRepository;
+import gov.bf.ascelc.cge_agenda.service.EmailService;
 import gov.bf.ascelc.cge_agenda.service.EventService;
 import gov.bf.ascelc.cge_agenda.utils.ValidationUtils;
 
-// iText PDF imports
 import com.itextpdf.io.font.constants.StandardFonts;
 import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.colors.ColorConstants;
@@ -32,7 +32,6 @@ import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
 import com.itextpdf.layout.properties.VerticalAlignment;
 
-// Apache POI imports (pour Excel)
 import org.apache.poi.ss.usermodel.*;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -44,6 +43,8 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayInputStream;
@@ -74,48 +75,78 @@ public class EventServiceImpl implements EventService {
     private final ParticipantRepository participantRepository;
     private final ParticipantEventRepository participantEventRepository;
     private final ParticipantMapper participantMapper;
+    private final EmailService emailService;
 
-    // ==========================================
-    // CRÉATION D'UN ÉVÉNEMENT COMPLET
-    // ==========================================
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public EventDto create(EventDto dto) {
-        log.info("Début création événement : {}", dto.getTitle());
+        log.info("=== DEBUT CREATE === title='{}' type={} start={} end={}",
+                dto.getTitle(), dto.getType(), dto.getStartDate(), dto.getEndDate());
+        log.info("globalStart={} globalEnd={} schedules.size={}",
+                dto.getGlobalStartTime(), dto.getGlobalEndTime(),
+                dto.getSchedules() != null ? dto.getSchedules().size() : "null");
+
         validateEventDates(dto.getStartDate(), dto.getEndDate());
+        log.info("validateEventDates OK");
+
         validateScheduleMode(dto);
+        log.info("validateScheduleMode OK");
 
         Event event = eventMapper.toEntity(dto);
         event.setCreatedAt(LocalDateTime.now());
         event = eventRepository.save(event);
+        log.info("event sauvegardé ID={}", event.getId());
 
-        try {
-            if (dto.getFiles() != null && !dto.getFiles().isEmpty()) {
-                List<File> savedFiles = new ArrayList<>();
-                for (FileDto fileDto : dto.getFiles()) {
-                    File file = eventMapper.toFileEntity(fileDto);
-                    file.setEvent(event);
-                    file.setCreatedAt(LocalDateTime.now());
-                    savedFiles.add(file);
-                }
-                event.setFiles(new HashSet<>(savedFiles));
+        // Fichiers
+        if (dto.getFiles() != null && !dto.getFiles().isEmpty()) {
+            List<File> savedFiles = new ArrayList<>();
+            for (FileDto fileDto : dto.getFiles()) {
+                File file = eventMapper.toFileEntity(fileDto);
+                file.setEvent(event);
+                file.setCreatedAt(LocalDateTime.now());
+                savedFiles.add(file);
             }
+            event.setFiles(new HashSet<>(savedFiles));
+            log.info("{} fichiers attachés", savedFiles.size());
+        }
 
-            List<Schedule> schedules = createSchedules(event, dto);
-            if (dto.getParticipants() != null && !dto.getParticipants().isEmpty()) {
-                processParticipants(event, dto.getParticipants(), schedules);
-            }
+        // Schedules
+        List<Schedule> schedules = createSchedules(event, dto);
+        log.info("{} schedules créés", schedules.size());
 
-            event = eventRepository.save(event);
-            log.info("Événement créé avec succès : ID = {}", event.getId());
-            return enrichWithStructures(eventMapper.toDto(event), event);
-        } catch (Exception e) {
-            log.error("❌ Échec création événement – rollback : {}", e.getMessage());
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Échec de la création de l'événement : " + e.getMessage()
+        // Participants
+        List<UUID[]> participantInvitations = new ArrayList<>();
+        if (dto.getParticipants() != null && !dto.getParticipants().isEmpty()) {
+            log.info("Traitement de {} participants...",
+                    dto.getParticipants().size());
+            participantInvitations = processParticipants(
+                    event, dto.getParticipants(), schedules);
+            log.info("{} participants traités",
+                    participantInvitations.size());
+        }
+
+        event = eventRepository.save(event);
+        log.info("event final sauvegardé");
+
+        final List<UUID[]> finalInvitations = participantInvitations;
+        if (!finalInvitations.isEmpty()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            log.info("Transaction commitée → {} invitation(s)",
+                                    finalInvitations.size());
+                            for (UUID[] ids : finalInvitations) {
+                                emailService.sendEventInvitation(ids[0], ids[1]);
+                            }
+                        }
+                    }
             );
         }
+
+        log.info(" CREATE TERMINÉ");
+        return enrichWithStructures(eventMapper.toDto(event), event);
     }
 
     // ==========================================
@@ -124,23 +155,19 @@ public class EventServiceImpl implements EventService {
     @Override
     public EventDto cancelEvent(UUID id, String reason) {
         log.info("Annulation de l'événement : ID = {}", id);
-
         return eventRepository.findById(id)
                 .map(event -> {
                     event.setStatus(EventStatus.ANNULER);
                     event.setDescription(event.getDescription() +
                             "\n\n[ANNULÉ] Raison : " + reason);
                     event.setUpdatedAt(LocalDateTime.now());
-
                     Event updated = eventRepository.save(event);
                     log.info("Événement annulé : ID = {}", id);
-
                     return eventMapper.toDto(updated);
                 })
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Événement non trouvé avec l'ID : " + id
-                ));
+                        "Événement non trouvé avec l'ID : " + id));
     }
 
     // ==========================================
@@ -148,25 +175,21 @@ public class EventServiceImpl implements EventService {
     // ==========================================
     @Override
     public EventDto postponeEvent(UUID id, LocalDate newStartDate, LocalDate newEndDate) {
-        log.info("Report de l'événement : ID = {}, nouvelles dates : {} - {}",
+        log.info("Report de l'événement : ID = {}, {} - {}",
                 id, newStartDate, newEndDate);
-
         validateEventDates(newStartDate, newEndDate);
 
         return eventRepository.findById(id)
                 .map(event -> {
                     LocalTime globalStartTime = null;
-                    LocalTime globalEndTime = null;
+                    LocalTime globalEndTime   = null;
 
                     if (!event.getSchedules().isEmpty()) {
-                        Schedule firstSchedule = event.getSchedules()
-                                .stream()
-                                .findFirst()
-                                .orElse(null);
-
-                        if (firstSchedule != null) {
-                            globalStartTime = firstSchedule.getStartTime();
-                            globalEndTime = firstSchedule.getEndTime();
+                        Schedule first = event.getSchedules().stream()
+                                .findFirst().orElse(null);
+                        if (first != null) {
+                            globalStartTime = first.getStartTime();
+                            globalEndTime   = first.getEndTime();
                         }
                     }
 
@@ -180,18 +203,16 @@ public class EventServiceImpl implements EventService {
                     scheduleRepository.deleteByEventId(id);
 
                     if (globalStartTime != null && globalEndTime != null) {
-                        LocalDate currentDate = newStartDate;
-                        while (!currentDate.isAfter(newEndDate)) {
-                            Schedule schedule = Schedule.builder()
-                                    .dateJour(currentDate)
+                        LocalDate cur = newStartDate;
+                        while (!cur.isAfter(newEndDate)) {
+                            scheduleRepository.save(Schedule.builder()
+                                    .dateJour(cur)
                                     .startTime(globalStartTime)
                                     .endTime(globalEndTime)
                                     .event(updated)
                                     .createdAt(LocalDateTime.now())
-                                    .build();
-
-                            scheduleRepository.save(schedule);
-                            currentDate = currentDate.plusDays(1);
+                                    .build());
+                            cur = cur.plusDays(1);
                         }
                         log.info("Horaires recréés pour les nouvelles dates");
                     }
@@ -201,8 +222,7 @@ public class EventServiceImpl implements EventService {
                 })
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Événement non trouvé avec l'ID : " + id
-                ));
+                        "Événement non trouvé avec l'ID : " + id));
     }
 
     // ==========================================
@@ -210,75 +230,57 @@ public class EventServiceImpl implements EventService {
     // ==========================================
     @Override
     @Transactional(readOnly = true)
-    public List<EventDto> searchEvents(String keyword, EventType type, EventStatus status,
+    public List<EventDto> searchEvents(String keyword, EventType type,
+                                       EventStatus status,
                                        LocalDate startDate, LocalDate endDate) {
-        log.info("Recherche d'événements : keyword={}, type={}, status={}", keyword, type, status);
-
+        log.info("Recherche : keyword={}, type={}, status={}",
+                keyword, type, status);
         List<Event> events = eventRepository.findAll();
 
         if (keyword != null && !keyword.trim().isEmpty()) {
-            String lowerKeyword = keyword.toLowerCase();
+            String lk = keyword.toLowerCase();
             events = events.stream()
-                    .filter(e -> e.getTitle().toLowerCase().contains(lowerKeyword) ||
+                    .filter(e -> e.getTitle().toLowerCase().contains(lk) ||
                             (e.getDescription() != null &&
-                                    e.getDescription().toLowerCase().contains(lowerKeyword)))
+                                    e.getDescription().toLowerCase().contains(lk)))
                     .collect(Collectors.toList());
         }
-
-        if (type != null) {
-            events = events.stream()
-                    .filter(e -> e.getType() == type)
-                    .collect(Collectors.toList());
-        }
-
-        if (status != null) {
-            events = events.stream()
-                    .filter(e -> e.getStatus() == status)
-                    .collect(Collectors.toList());
-        }
-
-        if (startDate != null && endDate != null) {
-            events = events.stream()
-                    .filter(e -> !e.getEndDate().isBefore(startDate) &&
-                            !e.getStartDate().isAfter(endDate))
-                    .collect(Collectors.toList());
-        }
+        if (type   != null) events = events.stream()
+                .filter(e -> e.getType()   == type)
+                .collect(Collectors.toList());
+        if (status != null) events = events.stream()
+                .filter(e -> e.getStatus() == status)
+                .collect(Collectors.toList());
+        if (startDate != null && endDate != null) events = events.stream()
+                .filter(e -> !e.getEndDate().isBefore(startDate) &&
+                        !e.getStartDate().isAfter(endDate))
+                .collect(Collectors.toList());
 
         log.info("{} événements trouvés", events.size());
         return eventMapper.toDtos(events);
     }
 
     // ==========================================
-    // ÉVÉNEMENTS PAR MOIS
+    // ÉVÉNEMENTS PAR MOIS / PÉRIODE
     // ==========================================
     @Override
     @Transactional(readOnly = true)
     public List<EventDto> getEventsByMonth(int year, int month) {
-        log.info("Récupération des événements pour : {}/{}", month, year);
-
-        YearMonth yearMonth = YearMonth.of(year, month);
-        LocalDate startDate = yearMonth.atDay(1);
-        LocalDate endDate = yearMonth.atEndOfMonth();
-
-        return getEventsByDateRange(startDate, endDate);
+        YearMonth ym = YearMonth.of(year, month);
+        return getEventsByDateRange(ym.atDay(1), ym.atEndOfMonth());
     }
 
-    // ==========================================
-    // ÉVÉNEMENTS PAR PÉRIODE
-    // ==========================================
     @Override
     @Transactional(readOnly = true)
     public List<EventDto> getEventsByDateRange(LocalDate startDate, LocalDate endDate) {
-        log.info("Récupération des événements entre {} et {}", startDate, endDate);
+        log.info("Événements entre {} et {}", startDate, endDate);
         List<Event> events = eventRepository.findAll().stream()
                 .filter(e -> !e.getEndDate().isBefore(startDate) &&
                         !e.getStartDate().isAfter(endDate))
                 .collect(Collectors.toList());
         log.info("{} événements trouvés", events.size());
-
-
         return events.stream()
-                .map(event -> enrichWithStructures(eventMapper.toDto(event), event))
+                .map(e -> enrichWithStructures(eventMapper.toDto(e), e))
                 .toList();
     }
 
@@ -288,25 +290,21 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional
     public EventDto addParticipant(UUID eventId, ParticipantDto participantDto) {
-        log.info("Ajout d'un participant à l'événement : {}", eventId);
+        log.info("Ajout participant à l'événement : {}", eventId);
 
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Événement non trouvé avec l'ID : " + eventId
-                ));
+                        "Événement non trouvé : " + eventId));
 
         List<Schedule> schedules = scheduleRepository.findByEventId(eventId);
-
         Participant participant;
 
         if (participantDto.getId() != null) {
-            log.info("Ajout du participant existant : ID = {}", participantDto.getId());
             participant = participantRepository.findById(participantDto.getId())
                     .orElseThrow(() -> new ResponseStatusException(
                             HttpStatus.NOT_FOUND,
-                            "Participant non trouvé avec l'ID : " + participantDto.getId()
-                    ));
+                            "Participant non trouvé : " + participantDto.getId()));
         } else {
             participant = findOrCreateParticipant(participantDto);
         }
@@ -315,23 +313,28 @@ public class EventServiceImpl implements EventService {
 
         if (participantEventRepository.existsByParticipantIdAndEventId(
                 participant.getId(), eventId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    String.format("Le participant %s %s est déjà inscrit à cet événement",
-                            participant.getFirstName(), participant.getLastName())
-            );
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    String.format("Le participant %s %s est déjà inscrit",
+                            participant.getFirstName(), participant.getLastName()));
         }
 
-        ParticipantEvent participantEvent = ParticipantEvent.builder()
+        participantEventRepository.save(ParticipantEvent.builder()
                 .participant(participant)
                 .event(event)
                 .createdAt(LocalDateTime.now())
-                .build();
+                .build());
 
-        participantEventRepository.save(participantEvent);
-        log.info("Participant ajouté : {} {}", participant.getFirstName(),
-                participant.getLastName());
+        final UUID pId = participant.getId();
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        emailService.sendEventInvitation(eventId, pId);
+                    }
+                });
 
+        log.info("Participant ajouté : {} {}",
+                participant.getFirstName(), participant.getLastName());
         return getEventById(eventId);
     }
 
@@ -341,530 +344,359 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional
     public EventDto removeParticipant(UUID eventId, UUID participantId) {
-        log.info("Retrait du participant {} de l'événement {}", participantId, eventId);
-
         if (!eventRepository.existsById(eventId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Événement non trouvé avec l'ID : " + eventId
-            );
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Événement non trouvé : " + eventId);
         }
-
-        // SUPPRESSION DIRECTE AVEC LA REQUÊTE
-        participantEventRepository.deleteByEventIdAndParticipantId(eventId, participantId);
-
-        log.info("Participant retiré avec succès");
+        participantEventRepository.deleteByEventIdAndParticipantId(
+                eventId, participantId);
+        log.info("Participant retiré");
         return getEventById(eventId);
     }
 
     // ==========================================
-    // RÉCUPÉRER LES PARTICIPANTS D'UN ÉVÉNEMENT
+    // RÉCUPÉRER LES PARTICIPANTS
     // ==========================================
     @Override
     @Transactional(readOnly = true)
     public List<ParticipantDto> getEventParticipants(UUID eventId) {
-        log.info("Récupération des participants de l'événement : {}", eventId);
-
         if (!eventRepository.existsById(eventId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Événement non trouvé avec l'ID : " + eventId
-            );
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Événement non trouvé : " + eventId);
         }
-
-        List<Participant> participants = participantEventRepository
-                .findParticipantsByEventId(eventId);
-
-        log.info("{} participants trouvés", participants.size());
-        return participantMapper.toDtos(participants);
+        return participantMapper.toDtos(
+                participantEventRepository.findParticipantsByEventId(eventId));
     }
 
     // ==========================================
     // IMPORTER DES PARTICIPANTS
     // ==========================================
     @Override
-    public List<ParticipantDto> importParticipants(UUID eventId, byte[] fileContent,
+    public List<ParticipantDto> importParticipants(UUID eventId,
+                                                   byte[] fileContent,
                                                    String fileType) {
-        log.info("Import de participants pour l'événement : {}, type : {}", eventId, fileType);
+        log.info("Import participants événement={} type={}", eventId, fileType);
 
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Événement non trouvé avec l'ID : " + eventId
-                ));
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + eventId));
 
         List<Schedule> schedules = scheduleRepository.findByEventId(eventId);
-        List<ParticipantDto> importedParticipants = new ArrayList<>();
+        List<ParticipantDto> imported = new ArrayList<>();
+        List<UUID[]> invitations     = new ArrayList<>();
 
         try {
-            List<ParticipantDto> participantsToImport;
-
+            List<ParticipantDto> toImport;
             if ("csv".equalsIgnoreCase(fileType)) {
-                participantsToImport = parseCSV(fileContent);
-            } else if ("xlsx".equalsIgnoreCase(fileType) || "xls".equalsIgnoreCase(fileType)) {
-                participantsToImport = parseExcel(fileContent);
+                toImport = parseCSV(fileContent);
+            } else if ("xlsx".equalsIgnoreCase(fileType) ||
+                    "xls".equalsIgnoreCase(fileType)) {
+                toImport = parseExcel(fileContent);
             } else {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Format de fichier non supporté : " + fileType
-                );
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Format non supporté : " + fileType);
             }
 
-            for (ParticipantDto dto : participantsToImport) {
+            for (ParticipantDto dto : toImport) {
                 try {
-                    Participant participant = findOrCreateParticipant(dto);
-                    validateParticipantAvailability(participant, schedules);
-
+                    Participant p = findOrCreateParticipant(dto);
+                    validateParticipantAvailability(p, schedules);
                     if (!participantEventRepository.existsByParticipantIdAndEventId(
-                            participant.getId(), eventId)) {
-
-                        ParticipantEvent participantEvent = ParticipantEvent.builder()
-                                .participant(participant)
-                                .event(event)
-                                .createdAt(LocalDateTime.now())
-                                .build();
-
-                        participantEventRepository.save(participantEvent);
-                        importedParticipants.add(participantMapper.toDto(participant));
+                            p.getId(), eventId)) {
+                        participantEventRepository.save(ParticipantEvent.builder()
+                                .participant(p).event(event)
+                                .createdAt(LocalDateTime.now()).build());
+                        invitations.add(new UUID[]{eventId, p.getId()});
+                        imported.add(participantMapper.toDto(p));
                     }
                 } catch (Exception e) {
-                    log.warn("Erreur lors de l'import du participant {} : {}",
-                            dto.getEmail(), e.getMessage());
+                    log.warn("Erreur import {} : {}", dto.getEmail(), e.getMessage());
                 }
             }
 
-            log.info("{} participants importés avec succès", importedParticipants.size());
-            return importedParticipants;
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            for (UUID[] ids : invitations) {
+                                emailService.sendEventInvitation(ids[0], ids[1]);
+                            }
+                        }
+                    });
+
+            log.info("{} participants importés", imported.size());
+            return imported;
 
         } catch (Exception e) {
-            log.error("Erreur lors de l'import : {}", e.getMessage());
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Erreur lors de l'import des participants : " + e.getMessage()
-            );
+            log.error("Erreur import : {}", e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Erreur import : " + e.getMessage());
         }
     }
 
+
+    @Override
+    public EventDto update(UUID id, EventDto eventDto) {
+        return eventRepository.findById(id)
+                .map(existing -> {
+                    validateEventDates(eventDto.getStartDate(), eventDto.getEndDate());
+
+                    boolean hasChanges =
+                            isChanged(existing.getTitle(),       eventDto.getTitle())       ||
+                                    isChanged(existing.getDescription(), eventDto.getDescription()) ||
+                                    !Objects.equals(existing.getType(),   eventDto.getType())       ||
+                                    !Objects.equals(existing.getStatus(), eventDto.getStatus())     ||
+                                    !Objects.equals(existing.getStartDate(), eventDto.getStartDate()) ||
+                                    !Objects.equals(existing.getEndDate(),   eventDto.getEndDate())   ||
+                                    isChanged(existing.getVille(),       eventDto.getVille())       ||
+                                    isChanged(existing.getPays(),        eventDto.getPays())        ||
+                                    isChanged(existing.getMeetingLink(), eventDto.getMeetingLink());
+
+                    log.info("🔍 update id={} hasChanges={}", id, hasChanges);
+
+                    eventMapper.updateEntityFromDto(eventDto, existing);
+                    existing.setUpdatedAt(LocalDateTime.now());
+                    Event updated = eventRepository.save(existing);
+
+                    if (hasChanges) {
+                        final UUID uid = updated.getId();
+                        TransactionSynchronizationManager.registerSynchronization(
+                                new TransactionSynchronization() {
+                                    @Override
+                                    public void afterCommit() {
+                                        emailService.sendEventUpdateNotification(uid);
+                                    }
+                                });
+                        log.info("✅ Notification modification → {}", uid);
+                    } else {
+                        log.info("⏭ Aucun changement → pas de notification");
+                    }
+
+                    return eventMapper.toDto(updated);
+                })
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Événement non trouvé : " + id));
+    }
+
+
+    private boolean isChanged(String existing, String incoming) {
+        String a = (existing == null || existing.equals("null"))
+                ? "" : existing.trim();
+        String b = (incoming == null || incoming.equals("null"))
+                ? "" : incoming.trim();
+        return !a.equals(b);
+    }
+
     // ==========================================
-    // GÉNÉRER LISTE D'ÉMARGEMENT PDF
+    // TEST REMINDER
+    // ==========================================
+    @Override
+    public void sendTestReminder(UUID eventId) {
+        if (!eventRepository.existsById(eventId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Événement non trouvé : " + eventId);
+        }
+        emailService.sendEventReminder(eventId, 7);
+    }
+
+    // ==========================================
+    // ALL EVENTS
     // ==========================================
     @Override
     @Transactional(readOnly = true)
-    public byte[] generateAttendanceSheet(UUID eventId) {
-        log.info("📄 Génération de la liste participant PDF pour l'événement : {}", eventId);
+    public List<EventDto> allEvents() {
+        try {
+            return eventRepository
+                    .findAllWithParticipantsOrderedByStatusAndProximity()
+                    .stream()
+                    .map(e -> enrichWithStructures(eventMapper.toDto(e), e))
+                    .toList();
+        } catch (Exception e) {
+            log.error("Erreur chargement événements", e);
+            throw new RuntimeException("Impossible de charger les événements");
+        }
+    }
 
-        Event event = eventRepository.findById(eventId)
+    // ==========================================
+    // GET BY ID
+    // ==========================================
+    @Override
+    @Transactional(readOnly = true)
+    public EventDto getEventById(UUID id) {
+        Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Événement non trouvé avec l'ID : " + eventId
-                ));
-
-        List<ParticipantEvent> participantEvents = new ArrayList<>(event.getParticipantEvents());
-
-        try {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            PdfWriter writer = new PdfWriter(baos);
-            PdfDocument pdfDoc = new PdfDocument(writer);
-            Document document = new Document(pdfDoc, PageSize.A4);
-
-            document.setMargins(20, 30, 30, 30);
-
-            PdfFont fontBold = PdfFontFactory.createFont(StandardFonts.HELVETICA_BOLD);
-            PdfFont fontNormal = PdfFontFactory.createFont(StandardFonts.HELVETICA);
-
-            // EN-TÊTE
-            addPdfHeader(document, fontBold, fontNormal);
-            document.add(new Paragraph("\n"));
-
-            // TITRE
-            Paragraph title = new Paragraph("LISTE PARTICIPANT")
-                    .setFont(fontBold)
-                    .setFontSize(16)
-                    .setTextAlignment(TextAlignment.CENTER)
-                    .setMarginTop(10)
-                    .setMarginBottom(20)
-                    .setUnderline();
-            document.add(title);
-
-            // INFORMATIONS ÉVÉNEMENT
-            addEventInfoPdf(document, event, fontBold, fontNormal);
-            document.add(new Paragraph("\n"));
-
-            // TABLEAU PARTICIPANTS
-            addParticipantsTablePdf(document, participantEvents, fontBold, fontNormal);
-
-            // SIGNATURE
-            addSignatureSectionPdf(document, fontNormal);
-
-            document.close();
-
-            log.info("✅ Liste participant PDF générée avec succès");
-            return baos.toByteArray();
-
-        } catch (Exception e) {
-            log.error("❌ Erreur lors de la génération de la liste participant PDF : {}", e.getMessage());
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Erreur lors de la génération de la liste participant : " + e.getMessage()
-            );
-        }
+                        "Événement non trouvé : " + id));
+        return enrichWithStructures(eventMapper.toDto(event), event);
     }
 
     // ==========================================
-    // MÉTHODES PRIVÉES POUR PDF
+    // DELETE
     // ==========================================
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void delete(UUID id) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Événement non trouvé : " + id));
 
-    private void addPdfHeader(Document document, PdfFont fontBold, PdfFont fontNormal) throws Exception {
+        log.info("Suppression : {} schedules, {} fichiers, {} participants",
+                event.getSchedules().size(),
+                event.getFiles().size(),
+                event.getParticipantEvents().size());
 
-        com.itextpdf.layout.element.Table headerTable = new com.itextpdf.layout.element.Table(
-                UnitValue.createPercentArray(new float[]{35, 30, 35}));
-        headerTable.setWidth(UnitValue.createPercentValue(100));
-
-        DeviceRgb borderColor = new DeviceRgb(150, 150, 150);
-
-        // COLONNE GAUCHE
-        com.itextpdf.layout.element.Cell leftCell = new com.itextpdf.layout.element.Cell()
-                .setBorder(new SolidBorder(borderColor, 1))
-                .setPadding(10)
-                .setVerticalAlignment(VerticalAlignment.MIDDLE);
-
-        Paragraph leftText = new Paragraph()
-                .add(new Text("AUTORITE SUPERIEURE DE\n").setFont(fontBold).setFontSize(9))
-                .add(new Text("CONTROLE D'ETAT ET DE LUTTE\n").setFont(fontBold).setFontSize(9))
-                .add(new Text("CONTRE LA CORRUPTION\n").setFont(fontBold).setFontSize(9))
-                .add(new Text("------------\n").setFont(fontNormal).setFontSize(8))
-                .add(new Text("SECRETARIAT GENERAL\n").setFont(fontBold).setFontSize(9))
-                .add(new Text("------------\n").setFont(fontNormal).setFontSize(8))
-                .add(new Text("DIRECTION DES SYSTEMES\n").setFont(fontBold).setFontSize(8))
-                .add(new Text("D'INFORMATION, DE LA\n").setFont(fontBold).setFontSize(8))
-                .add(new Text("DOCUMENTATION ET DES\n").setFont(fontBold).setFontSize(8))
-                .add(new Text("ARCHIVES").setFont(fontBold).setFontSize(8))
-                .setTextAlignment(TextAlignment.CENTER);
-
-        leftCell.add(leftText);
-
-        // COLONNE CENTRALE - LOGO
-        com.itextpdf.layout.element.Cell centerCell = new com.itextpdf.layout.element.Cell()
-                .setBorder(Border.NO_BORDER)
-                .setPadding(5)
-                .setVerticalAlignment(VerticalAlignment.MIDDLE)
-                .setHorizontalAlignment(HorizontalAlignment.CENTER);
-
-        try {
-            ClassPathResource logoResource = new ClassPathResource("static/images/logo.png");
-            if (logoResource.exists()) {
-                Image logo = new Image(ImageDataFactory.create(logoResource.getURL()))
-                        .setWidth(80)
-                        .setHorizontalAlignment(HorizontalAlignment.CENTER);
-                centerCell.add(logo);
-                log.info("✅ Logo chargé avec succès : logo.png");
-            } else {
-                log.warn("⚠️ Logo non trouvé : static/images/logo.png");
-                Paragraph logoText = new Paragraph("ASCELC")
-                        .setFont(fontBold)
-                        .setFontSize(20)
-                        .setTextAlignment(TextAlignment.CENTER)
-                        .setFontColor(new DeviceRgb(0, 100, 0));
-                centerCell.add(logoText);
-            }
-        } catch (Exception e) {
-            log.warn("⚠️ Erreur chargement logo, utilisation du texte : {}", e.getMessage());
-            Paragraph logoText = new Paragraph("ASCELC")
-                    .setFont(fontBold)
-                    .setFontSize(20)
-                    .setTextAlignment(TextAlignment.CENTER)
-                    .setFontColor(new DeviceRgb(0, 100, 0));
-            centerCell.add(logoText);
+        if (!event.getFiles().isEmpty()) {
+            event.getFiles().forEach(file -> {
+                try {
+                    if (Files.deleteIfExists(Paths.get(file.getFilePath()))) {
+                        log.info("✓ Fichier physique supprimé : {}", file.getFileName());
+                    }
+                } catch (Exception e) {
+                    log.error("✗ Erreur suppression {} : {}",
+                            file.getFileName(), e.getMessage());
+                }
+            });
         }
 
-        // COLONNE DROITE
-        com.itextpdf.layout.element.Cell rightCell = new com.itextpdf.layout.element.Cell()
-                .setBorder(new SolidBorder(borderColor, 1))
-                .setPadding(10)
-                .setVerticalAlignment(VerticalAlignment.MIDDLE);
+        if (!event.getParticipantEvents().isEmpty())
+            participantEventRepository.deleteAll(event.getParticipantEvents());
+        if (!event.getSchedules().isEmpty())
+            scheduleRepository.deleteAll(event.getSchedules());
+        if (!event.getFiles().isEmpty())
+            event.getFiles().clear();
 
-        Paragraph rightText = new Paragraph()
-                .add(new Text("BURKINA FASO\n").setFont(fontBold).setFontSize(11))
-                .add(new Text("------------\n").setFont(fontNormal).setFontSize(8))
-                .add(new Text("La Patrie ou la Mort,\n").setFont(fontNormal).setFontSize(9).setItalic())
-                .add(new Text("nous Vaincrons").setFont(fontNormal).setFontSize(9).setItalic())
-                .setTextAlignment(TextAlignment.CENTER);
-
-        rightCell.add(rightText);
-
-        headerTable.addCell(leftCell);
-        headerTable.addCell(centerCell);
-        headerTable.addCell(rightCell);
-
-        document.add(headerTable);
-    }
-
-    private void addEventInfoPdf(Document document, Event event, PdfFont fontBold, PdfFont fontNormal) {
-        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-
-        com.itextpdf.layout.element.Table infoTable = new com.itextpdf.layout.element.Table(
-                UnitValue.createPercentArray(new float[]{30, 70}));
-        infoTable.setWidth(UnitValue.createPercentValue(100));
-        infoTable.setMarginBottom(10);
-
-        infoTable.addCell(createInfoCell("Titre :", fontBold));
-        infoTable.addCell(createInfoCell(event.getTitle(), fontNormal));
-
-        infoTable.addCell(createInfoCell("Type :", fontBold));
-        infoTable.addCell(createInfoCell(getTypeLabel(event.getType().name()), fontNormal));
-
-        String dateInfo = event.getStartDate().format(dateFormatter);
-        if (!event.getStartDate().equals(event.getEndDate())) {
-            dateInfo += " au " + event.getEndDate().format(dateFormatter);
-        }
-        infoTable.addCell(createInfoCell("Date :", fontBold));
-        infoTable.addCell(createInfoCell(dateInfo, fontNormal));
-
-        String lieu = "";
-        if (event.getVille() != null) lieu += event.getVille();
-        if (event.getPays() != null) {
-            if (!lieu.isEmpty()) lieu += ", ";
-            lieu += event.getPays();
-        }
-        if (!lieu.isEmpty()) {
-            infoTable.addCell(createInfoCell("Lieu :", fontBold));
-            infoTable.addCell(createInfoCell(lieu, fontNormal));
-        }
-
-        document.add(infoTable);
-    }
-
-    private com.itextpdf.layout.element.Cell createInfoCell(String text, PdfFont font) {
-        return new com.itextpdf.layout.element.Cell()
-                .add(new Paragraph(text).setFont(font).setFontSize(10))
-                .setBorder(Border.NO_BORDER)
-                .setPadding(3);
-    }
-
-    private void addParticipantsTablePdf(Document document, List<ParticipantEvent> participantEvents,
-                                         PdfFont fontBold, PdfFont fontNormal) {
-        if (participantEvents == null || participantEvents.isEmpty()) {
-            document.add(new Paragraph("Aucun participant enregistré")
-                    .setFont(fontNormal)
-                    .setFontSize(10)
-                    .setTextAlignment(TextAlignment.CENTER)
-                    .setFontColor(ColorConstants.GRAY));
-            return;
-        }
-
-        float[] columnWidths = {8, 30, 30, 32};
-        com.itextpdf.layout.element.Table table = new com.itextpdf.layout.element.Table(
-                UnitValue.createPercentArray(columnWidths));
-        table.setWidth(UnitValue.createPercentValue(100));
-
-        DeviceRgb headerColor = new DeviceRgb(220, 220, 220);
-
-        table.addHeaderCell(createHeaderCell("N°", fontBold, headerColor));
-        table.addHeaderCell(createHeaderCell("Nom et Prénoms", fontBold, headerColor));
-        table.addHeaderCell(createHeaderCell("Structure / Fonction", fontBold, headerColor));
-        table.addHeaderCell(createHeaderCell("Signature", fontBold, headerColor));
-
-        int index = 1;
-        for (ParticipantEvent pe : participantEvents) {
-            Participant participant = pe.getParticipant();
-
-            table.addCell(createDataCell(String.valueOf(index++), fontNormal, TextAlignment.CENTER));
-
-            String fullName = participant.getFirstName() + " " + participant.getLastName();
-            table.addCell(createDataCell(fullName, fontNormal, TextAlignment.LEFT));
-
-            String orgFunction = "";
-            if (participant.getStructure() != null) {
-                orgFunction = participant.getStructure();
-            }
-            if (participant.getJobTitle() != null) {
-                if (!orgFunction.isEmpty()) orgFunction += "\n";
-                orgFunction += participant.getJobTitle();
-            }
-            if (orgFunction.isEmpty()) orgFunction = "-";
-            table.addCell(createDataCell(orgFunction, fontNormal, TextAlignment.LEFT));
-
-            table.addCell(createDataCell("", fontNormal, TextAlignment.CENTER));
-        }
-
-        document.add(table);
-    }
-
-    private com.itextpdf.layout.element.Cell createHeaderCell(String text, PdfFont font, DeviceRgb bgColor) {
-        return new com.itextpdf.layout.element.Cell()
-                .add(new Paragraph(text).setFont(font).setFontSize(9).setBold())
-                .setBackgroundColor(bgColor)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setPadding(8)
-                .setBorder(new SolidBorder(ColorConstants.BLACK, 1));
-    }
-
-    private com.itextpdf.layout.element.Cell createDataCell(String text, PdfFont font, TextAlignment alignment) {
-        return new com.itextpdf.layout.element.Cell()
-                .add(new Paragraph(text).setFont(font).setFontSize(9))
-                .setTextAlignment(alignment)
-                .setPadding(8)
-                .setMinHeight(35)
-                .setBorder(new SolidBorder(ColorConstants.BLACK, 0.5f));
-    }
-
-    private void addSignatureSectionPdf(Document document, PdfFont fontNormal) {
-        document.add(new Paragraph("\n\n"));
-
-        com.itextpdf.layout.element.Table signatureTable = new com.itextpdf.layout.element.Table(
-                UnitValue.createPercentArray(new float[]{50, 50}));
-        signatureTable.setWidth(UnitValue.createPercentValue(100));
-
-        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        String today = LocalDate.now().format(dateFormatter);
-
-        com.itextpdf.layout.element.Cell dateCell = new com.itextpdf.layout.element.Cell()
-                .add(new Paragraph("Fait à Ouagadougou, le " + today)
-                        .setFont(fontNormal)
-                        .setFontSize(10))
-                .setBorder(Border.NO_BORDER);
-
-        com.itextpdf.layout.element.Cell signatureCell = new com.itextpdf.layout.element.Cell()
-                .add(new Paragraph("Le Responsable")
-                        .setFont(fontNormal)
-                        .setFontSize(10)
-                        .setTextAlignment(TextAlignment.CENTER))
-                .add(new Paragraph("\n\n\n")
-                        .setFont(fontNormal)
-                        .setFontSize(10))
-                .setBorder(Border.NO_BORDER);
-
-        signatureTable.addCell(dateCell);
-        signatureTable.addCell(signatureCell);
-
-        document.add(signatureTable);
-    }
-
-    private String getTypeLabel(String type) {
-        return switch (type) {
-            case "REUNION" -> "Réunion";
-            case "CONFERENCE" -> "Conférence";
-            case "ATELIER" -> "Atelier";
-            case "SEMINAIRE" -> "Séminaire";
-            case "FORMATION" -> "Formation";
-            case "MISSION" -> "Mission";
-            case "AUTRE" -> "Autre";
-            default -> type;
-        };
+        eventRepository.deleteById(id);
+        log.info("✓ Événement supprimé : {}", id);
     }
 
     // ==========================================
-    // VÉRIFIER DISPONIBILITÉ PARTICIPANT
+    // DISPONIBILITÉ PARTICIPANT
     // ==========================================
     @Override
     public boolean isParticipantAvailable(UUID participantId, LocalDate date,
                                           LocalTime startTime, LocalTime endTime) {
-        log.info("Vérification disponibilité participant : {}", participantId);
-
         Participant participant = participantRepository.findById(participantId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
-                        "Participant non trouvé avec l'ID : " + participantId
-                ));
+                        "Participant non trouvé : " + participantId));
 
-        Schedule tempSchedule = Schedule.builder()
-                .dateJour(date)
-                .startTime(startTime)
-                .endTime(endTime)
-                .build();
+        Schedule temp = Schedule.builder()
+                .dateJour(date).startTime(startTime).endTime(endTime).build();
 
-        List<Event> existingEvents = participantEventRepository
-                .findEventsByParticipantId(participantId);
-
-        for (Event existingEvent : existingEvents) {
-            List<Schedule> existingSchedules = scheduleRepository
-                    .findByEventId(existingEvent.getId());
-
-            for (Schedule existingSchedule : existingSchedules) {
-                if (hasTimeConflict(tempSchedule, existingSchedule)) {
-                    log.warn("Participant {} non disponible : conflit avec événement '{}'",
-                            participantId, existingEvent.getTitle());
+        for (Event e : participantEventRepository
+                .findEventsByParticipantId(participantId)) {
+            for (Schedule s : scheduleRepository.findByEventId(e.getId())) {
+                if (hasTimeConflict(temp, s)) {
+                    log.warn("Participant {} non dispo : conflit avec '{}'",
+                            participantId, e.getTitle());
                     return false;
                 }
             }
         }
-
-        log.info("Participant {} disponible pour la période demandée", participantId);
         return true;
     }
 
+    // ==========================================
+    // EVENTS PAR PARTICIPANT
+    // ==========================================
     @Override
     @Transactional(readOnly = true)
     public List<EventDto> getEventsByParticipant(UUID participantId) {
-        List<Event> events = eventRepository.findEventsByParticipantId(participantId);
-        return events.stream()
-                .map(event -> enrichWithStructures(eventMapper.toDto(event), event))
+        return eventRepository.findEventsByParticipantId(participantId).stream()
+                .map(e -> enrichWithStructures(eventMapper.toDto(e), e))
                 .toList();
     }
 
     // ==========================================
-    // MÉTHODES UTILITAIRES PRIVÉES
+    // MÉTHODES PRIVÉES
     // ==========================================
 
-    private List<ParticipantDto> parseCSV(byte[] fileContent) throws Exception {
-        List<ParticipantDto> participants = new ArrayList<>();
-        try (CSVParser parser = CSVFormat.DEFAULT
-                .builder()
-                .setHeader()
-                .setSkipHeaderRecord(true)
-                .build()
-                .parse(new InputStreamReader(new ByteArrayInputStream(fileContent), StandardCharsets.UTF_8))) {
-            for (CSVRecord record : parser) {
-                ParticipantDto dto = ParticipantDto.builder()
-                        .lastName(record.get("Nom"))
-                        .firstName(record.get("Prénom"))
-                        .email(record.get("Email"))
-                        .phoneNumber(record.get("Téléphone"))
-                        .structure(record.get("Structure"))
-                        .jobTitle(record.get("Fonction"))
-                        .build();
-                participants.add(dto);
+    private List<UUID[]> processParticipants(Event event,
+                                             List<ParticipantDto> dtos,
+                                             List<Schedule> newSchedules) {
+        List<UUID[]> invitations = new ArrayList<>();
+
+        // Vérifier les doublons d'email
+        Set<String> emails = new HashSet<>();
+        for (ParticipantDto dto : dtos) {
+            if (!emails.add(dto.getEmail().toLowerCase())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Email en double : " + dto.getEmail());
             }
         }
-        return participants;
+
+        for (ParticipantDto dto : dtos) {
+            Participant p = findOrCreateParticipant(dto);
+            validateParticipantAvailability(p, newSchedules);
+
+            if (!participantEventRepository.existsByParticipantIdAndEventId(
+                    p.getId(), event.getId())) {
+                participantEventRepository.save(ParticipantEvent.builder()
+                        .participant(p).event(event)
+                        .createdAt(LocalDateTime.now()).build());
+                invitations.add(new UUID[]{event.getId(), p.getId()});
+                log.info("Participant {} {} ajouté", p.getFirstName(), p.getLastName());
+            }
+        }
+        return invitations;
     }
 
-    private List<ParticipantDto> parseExcel(byte[] fileContent) throws Exception {
-        List<ParticipantDto> participants = new ArrayList<>();
+    private Participant findOrCreateParticipant(ParticipantDto dto) {
+        return participantRepository.findByEmail(dto.getEmail())
+                .orElseGet(() -> {
+                    Participant p = participantMapper.toEntity(dto);
+                    p.setCreatedAt(LocalDateTime.now());
+                    p = participantRepository.save(p);
+                    log.info("Nouveau participant : {} {}", p.getFirstName(), p.getLastName());
+                    return p;
+                });
+    }
 
-        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(fileContent))) {
-            Sheet sheet = workbook.getSheetAt(0);
+    private void validateParticipantAvailability(Participant participant,
+                                                 List<Schedule> newSchedules) {
+        List<Schedule> existing = scheduleRepository
+                .findAllSchedulesByParticipantId(participant.getId());
+        if (existing.isEmpty()) return;
 
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                Row row = sheet.getRow(i);
-                if (row != null) {
-                    ParticipantDto dto = ParticipantDto.builder()
-                            .lastName(getCellValue(row.getCell(0)))
-                            .firstName(getCellValue(row.getCell(1)))
-                            .email(getCellValue(row.getCell(2)))
-                            .phoneNumber(getCellValue(row.getCell(3)))
-                            .structure(getCellValue(row.getCell(4)))
-                            .jobTitle(getCellValue(row.getCell(5)))
-                            .build();
+        DateTimeFormatter df = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        DateTimeFormatter tf = DateTimeFormatter.ofPattern("HH:mm");
 
-                    participants.add(dto);
+        for (Schedule ns : newSchedules) {
+            for (Schedule es : existing) {
+                if (hasTimeConflict(ns, es)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            String.format(
+                                    "Impossible d'inscrire %s %s : " +
+                                            "il/elle participe déjà à « %s » " +
+                                            "le %s de %s à %s, " +
+                                            "en conflit avec %s-%s. " +
+                                            "Veuillez choisir un autre participant " +
+                                            "ou modifier les horaires.",
+                                    participant.getFirstName(),
+                                    participant.getLastName(),
+                                    es.getEvent().getTitle(),
+                                    es.getDateJour().format(df),
+                                    es.getStartTime().format(tf),
+                                    es.getEndTime().format(tf),
+                                    ns.getStartTime().format(tf),
+                                    ns.getEndTime().format(tf)));
                 }
             }
         }
-
-        return participants;
     }
 
-    private String getCellValue(org.apache.poi.ss.usermodel.Cell cell) {
-        if (cell == null) {
-            return "";
+    private boolean hasTimeConflict(Schedule s1, Schedule s2) {
+        if (!s1.getDateJour().equals(s2.getDateJour())) return false;
+        boolean overlap = s1.getStartTime().isBefore(s2.getEndTime()) &&
+                s2.getStartTime().isBefore(s1.getEndTime());
+        if (overlap) {
+            log.warn("Chevauchement : {} ({}-{}) vs ({}-{})",
+                    s1.getDateJour(), s1.getStartTime(), s1.getEndTime(),
+                    s2.getStartTime(), s2.getEndTime());
         }
-
-        return switch (cell.getCellType()) {
-            case STRING -> cell.getStringCellValue();
-            case NUMERIC -> String.valueOf((long) cell.getNumericCellValue());
-            default -> "";
-        };
+        return overlap;
     }
 
     private List<Schedule> createSchedules(Event event, EventDto dto) {
@@ -872,306 +704,376 @@ public class EventServiceImpl implements EventService {
 
         if (dto.isGlobalScheduleMode()) {
             validateTimeRange(dto.getGlobalStartTime(), dto.getGlobalEndTime());
-
-            LocalDate currentDate = dto.getStartDate();
-            while (!currentDate.isAfter(dto.getEndDate())) {
-                Schedule schedule = Schedule.builder()
-                        .dateJour(currentDate)
+            LocalDate cur = dto.getStartDate();
+            while (!cur.isAfter(dto.getEndDate())) {
+                schedules.add(Schedule.builder()
+                        .dateJour(cur)
                         .startTime(dto.getGlobalStartTime())
                         .endTime(dto.getGlobalEndTime())
                         .event(event)
                         .createdAt(LocalDateTime.now())
-                        .build();
-
-                schedules.add(scheduleRepository.save(schedule));
-                currentDate = currentDate.plusDays(1);
+                        .build());
+                cur = cur.plusDays(1);
             }
+            schedules = scheduleRepository.saveAll(schedules);
+            log.info("{} horaires globaux", schedules.size());
 
-            log.info("{} horaires globaux générés", schedules.size());
         } else if (dto.isCustomScheduleMode()) {
-            for (ScheduleDto scheduleDto : dto.getSchedules()) {
-                validateScheduleInPeriod(scheduleDto, dto.getStartDate(), dto.getEndDate());
-                validateTimeRange(scheduleDto.getStartTime(), scheduleDto.getEndTime());
-
-                Schedule schedule = Schedule.builder()
-                        .dateJour(scheduleDto.getDateJour())
-                        .startTime(scheduleDto.getStartTime())
-                        .endTime(scheduleDto.getEndTime())
-                        .address(scheduleDto.getAddress())
+            for (ScheduleDto s : dto.getSchedules()) {
+                validateScheduleInPeriod(s, dto.getStartDate(), dto.getEndDate());
+                validateTimeRange(s.getStartTime(), s.getEndTime());
+                schedules.add(Schedule.builder()
+                        .dateJour(s.getDateJour())
+                        .startTime(s.getStartTime())
+                        .endTime(s.getEndTime())
+                        .address(s.getAddress())
                         .event(event)
                         .createdAt(LocalDateTime.now())
-                        .build();
-
-                schedules.add(scheduleRepository.save(schedule));
+                        .build());
             }
-
-            log.info("{} horaires spécifiques créés", schedules.size());
+            schedules = scheduleRepository.saveAll(schedules);
+            log.info("{} horaires custom", schedules.size());
         }
-
         return schedules;
     }
 
-    private void processParticipants(Event event, List<ParticipantDto> participantDtos,
-                                     List<Schedule> newSchedules) {
-        Set<String> emails = new HashSet<>();
-        for (ParticipantDto dto : participantDtos) {
-            String email = dto.getEmail().toLowerCase();
-            if (!emails.add(email)) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Email en double dans la liste des participants : " + dto.getEmail()
-                );
-            }
-        }
-
-        for (ParticipantDto participantDto : participantDtos) {
-            Participant participant = findOrCreateParticipant(participantDto);
-            validateParticipantAvailability(participant, newSchedules);
-
-            if (!participantEventRepository.existsByParticipantIdAndEventId(
-                    participant.getId(), event.getId())) {
-
-                ParticipantEvent participantEvent = ParticipantEvent.builder()
-                        .participant(participant)
-                        .event(event)
-                        .createdAt(LocalDateTime.now())
-                        .build();
-
-                participantEventRepository.save(participantEvent);
-                log.info("Participant {} {} ajouté à l'événement",
-                        participant.getFirstName(), participant.getLastName());
-            }
+    private void validateEventDates(LocalDate start, LocalDate end) {
+        if (!ValidationUtils.isValidDateRange(start, end)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La date de fin doit être >= à la date de début");
         }
     }
 
-    private Participant findOrCreateParticipant(ParticipantDto dto) {
-        Optional<Participant> existing = participantRepository.findByEmail(dto.getEmail());
-
-        if (existing.isPresent()) {
-            log.info("Participant existant trouvé : {}", dto.getEmail());
-            return existing.get();
-        }
-
-        Participant newParticipant = participantMapper.toEntity(dto);
-        newParticipant.setCreatedAt(LocalDateTime.now());
-
-        newParticipant = participantRepository.save(newParticipant);
-        log.info("Nouveau participant créé : {} {}",
-                newParticipant.getFirstName(), newParticipant.getLastName());
-
-        return newParticipant;
-    }
-
-    private void validateParticipantAvailability(Participant participant,
-                                                 List<Schedule> newSchedules) {
-        log.info("Vérification disponibilité : {} {}",
-                participant.getFirstName(), participant.getLastName());
-
-        List<Event> existingEvents = participantEventRepository
-                .findEventsByParticipantId(participant.getId());
-
-        if (existingEvents.isEmpty()) {
-            log.info("Participant disponible (aucun événement existant)");
-            return;
-        }
-
-        for (Event existingEvent : existingEvents) {
-            List<Schedule> existingSchedules = scheduleRepository
-                    .findByEventId(existingEvent.getId());
-
-            for (Schedule newSchedule : newSchedules) {
-                for (Schedule existingSchedule : existingSchedules) {
-                    if (hasTimeConflict(newSchedule, existingSchedule)) {
-                        String errorMessage = String.format(
-                                "CONFLIT HORAIRE détecté !\n" +
-                                        "Participant : %s %s\n" +
-                                        "Événement existant : '%s'\n" +
-                                        "Date : %s\n" +
-                                        "Horaire existant : %s - %s\n" +
-                                        "Nouvel horaire : %s - %s",
-                                participant.getFirstName(), participant.getLastName(),
-                                existingEvent.getTitle(),
-                                existingSchedule.getDateJour(),
-                                existingSchedule.getStartTime(), existingSchedule.getEndTime(),
-                                newSchedule.getStartTime(), newSchedule.getEndTime()
-                        );
-
-                        log.error(errorMessage);
-                        throw new ResponseStatusException(HttpStatus.CONFLICT, errorMessage);
-                    }
-                }
-            }
-        }
-
-        log.info("Participant disponible (aucun conflit détecté)");
-    }
-
-    private boolean hasTimeConflict(Schedule schedule1, Schedule schedule2) {
-        if (!schedule1.getDateJour().equals(schedule2.getDateJour())) {
-            return false;
-        }
-
-        LocalTime start1 = schedule1.getStartTime();
-        LocalTime end1 = schedule1.getEndTime();
-        LocalTime start2 = schedule2.getStartTime();
-        LocalTime end2 = schedule2.getEndTime();
-
-        boolean overlap = start1.isBefore(end2) && start2.isBefore(end1);
-
-        if (overlap) {
-            log.warn("Chevauchement détecté : {} ({} - {}) vs ({} - {})",
-                    schedule1.getDateJour(), start1, end1, start2, end2);
-        }
-
-        return overlap;
-    }
-
-    private void validateEventDates(LocalDate startDate, LocalDate endDate) {
-        if (!ValidationUtils.isValidDateRange(startDate, endDate)) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "La date de fin doit être supérieure ou égale à la date de début"
-            );
-        }
-    }
-
-    private void validateTimeRange(LocalTime startTime, LocalTime endTime) {
-        if (!ValidationUtils.isValidTimeRange(startTime, endTime)) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "L'heure de fin doit être supérieure à l'heure de début"
-            );
+    private void validateTimeRange(LocalTime start, LocalTime end) {
+        if (!ValidationUtils.isValidTimeRange(start, end)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "L'heure de fin doit être > à l'heure de début");
         }
     }
 
     private void validateScheduleMode(EventDto dto) {
-        boolean hasGlobalTime = dto.getGlobalStartTime() != null &&
-                dto.getGlobalEndTime() != null;
-        boolean hasCustomSchedules = dto.getSchedules() != null &&
+        boolean hasGlobal = dto.getGlobalStartTime() != null &&
+                dto.getGlobalEndTime()   != null;
+        boolean hasCustom = dto.getSchedules() != null &&
                 !dto.getSchedules().isEmpty();
 
-        if (!hasGlobalTime && !hasCustomSchedules) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Vous devez fournir soit des horaires globaux, soit des horaires spécifiques"
-            );
-        }
+        log.info("validateScheduleMode → globalStart={} globalEnd={} " +
+                        "schedules.size={} isGlobal={} isCustom={}",
+                dto.getGlobalStartTime(), dto.getGlobalEndTime(),
+                dto.getSchedules() != null ? dto.getSchedules().size() : "null",
+                dto.isGlobalScheduleMode(), dto.isCustomScheduleMode());
 
-        if (hasGlobalTime && hasCustomSchedules) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Vous ne pouvez pas fournir à la fois des horaires globaux ET des horaires spécifiques"
-            );
+        if (!hasGlobal && !hasCustom) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Fournir globalStartTime+globalEndTime OU schedules");
         }
-    }
-
-    private void validateScheduleInPeriod(ScheduleDto scheduleDto,
-                                          LocalDate eventStart, LocalDate eventEnd) {
-        if (scheduleDto.getDateJour().isBefore(eventStart) ||
-                scheduleDto.getDateJour().isAfter(eventEnd)) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    String.format("La date %s n'est pas dans la période de l'événement (%s - %s)",
-                            scheduleDto.getDateJour(), eventStart, eventEnd)
-            );
+        if (hasGlobal && hasCustom) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Ne pas fournir à la fois horaires globaux ET spécifiques");
         }
     }
 
-    @Override
-    public EventDto update(UUID id, EventDto eventDto) {
-        return eventRepository.findById(id)
-                .map(eventExisted -> {
-                    validateEventDates(eventDto.getStartDate(), eventDto.getEndDate());
-
-                    eventMapper.updateEntityFromDto(eventDto, eventExisted);
-                    eventExisted.setUpdatedAt(LocalDateTime.now());
-
-                    Event updated = eventRepository.save(eventExisted);
-                    log.info("Événement mis à jour : ID = {}", id);
-
-                    return eventMapper.toDto(updated);
-                })
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Événement non trouvé avec l'ID : " + id
-                ));
+    private void validateScheduleInPeriod(ScheduleDto s,
+                                          LocalDate start, LocalDate end) {
+        if (s.getDateJour().isBefore(start) || s.getDateJour().isAfter(end)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    String.format("Date %s hors période (%s - %s)",
+                            s.getDateJour(), start, end));
+        }
     }
 
-
+    // ==========================================
+    // PDF
+    // ==========================================
     @Override
     @Transactional(readOnly = true)
-    public List<EventDto> allEvents() {
+    public byte[] generateAttendanceSheet(UUID eventId) {
+        log.info("Génération PDF émargement : {}", eventId);
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + eventId));
+
+        List<ParticipantEvent> pes = new ArrayList<>(event.getParticipantEvents());
+
         try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            PdfDocument pdfDoc = new PdfDocument(new PdfWriter(baos));
+            Document doc = new Document(pdfDoc, PageSize.A4);
+            doc.setMargins(20, 30, 30, 30);
 
-            List<Event> events = eventRepository.findAllWithParticipantsOrderedByStatusAndProximity();
-            return events.stream()
-                    .map(event -> enrichWithStructures(eventMapper.toDto(event), event))
-                    .toList();
+            PdfFont bold   = PdfFontFactory.createFont(StandardFonts.HELVETICA_BOLD);
+            PdfFont normal = PdfFontFactory.createFont(StandardFonts.HELVETICA);
+
+            addPdfHeader(doc, bold, normal);
+            doc.add(new Paragraph("\n"));
+            doc.add(new Paragraph("LISTE PARTICIPANT")
+                    .setFont(bold).setFontSize(16)
+                    .setTextAlignment(TextAlignment.CENTER)
+                    .setMarginTop(10).setMarginBottom(20).setUnderline());
+
+            addEventInfoPdf(doc, event, bold, normal);
+            doc.add(new Paragraph("\n"));
+            addParticipantsTablePdf(doc, pes, bold, normal);
+            addSignatureSectionPdf(doc, normal);
+            doc.close();
+
+            log.info("✅ PDF généré");
+            return baos.toByteArray();
+
         } catch (Exception e) {
-            log.error("Erreur lors du chargement des événements", e);
-            throw new RuntimeException("Impossible de charger les événements");
+            log.error("❌ Erreur PDF : {}", e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Erreur génération PDF : " + e.getMessage());
         }
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public EventDto getEventById(UUID id) {
-        Event event = eventRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Événement non trouvé avec l'ID : " + id
-                ));
-        return enrichWithStructures(eventMapper.toDto(event), event);
+    private void addPdfHeader(Document doc, PdfFont bold, PdfFont normal)
+            throws Exception {
+        com.itextpdf.layout.element.Table t =
+                new com.itextpdf.layout.element.Table(
+                        UnitValue.createPercentArray(new float[]{35, 30, 35}));
+        t.setWidth(UnitValue.createPercentValue(100));
+        DeviceRgb bc = new DeviceRgb(150, 150, 150);
+
+        com.itextpdf.layout.element.Cell left =
+                new com.itextpdf.layout.element.Cell()
+                        .setBorder(new SolidBorder(bc, 1)).setPadding(10)
+                        .setVerticalAlignment(VerticalAlignment.MIDDLE);
+        left.add(new Paragraph()
+                .add(new Text("AUTORITE SUPERIEURE DE\n").setFont(bold).setFontSize(9))
+                .add(new Text("CONTROLE D'ETAT ET DE LUTTE\n").setFont(bold).setFontSize(9))
+                .add(new Text("CONTRE LA CORRUPTION\n").setFont(bold).setFontSize(9))
+                .add(new Text("------------\n").setFont(normal).setFontSize(8))
+                .add(new Text("SECRETARIAT GENERAL\n").setFont(bold).setFontSize(9))
+                .add(new Text("------------\n").setFont(normal).setFontSize(8))
+                .add(new Text("DIRECTION DES SYSTEMES\n").setFont(bold).setFontSize(8))
+                .add(new Text("D'INFORMATION, DE LA\n").setFont(bold).setFontSize(8))
+                .add(new Text("DOCUMENTATION ET DES\n").setFont(bold).setFontSize(8))
+                .add(new Text("ARCHIVES").setFont(bold).setFontSize(8))
+                .setTextAlignment(TextAlignment.CENTER));
+
+        com.itextpdf.layout.element.Cell center =
+                new com.itextpdf.layout.element.Cell()
+                        .setBorder(Border.NO_BORDER).setPadding(5)
+                        .setVerticalAlignment(VerticalAlignment.MIDDLE)
+                        .setHorizontalAlignment(HorizontalAlignment.CENTER);
+        try {
+            ClassPathResource logo = new ClassPathResource("static/images/logo.png");
+            if (logo.exists()) {
+                center.add(new Image(ImageDataFactory.create(logo.getURL()))
+                        .setWidth(80).setHorizontalAlignment(HorizontalAlignment.CENTER));
+            } else {
+                center.add(new Paragraph("ASCELC").setFont(bold).setFontSize(20)
+                        .setTextAlignment(TextAlignment.CENTER)
+                        .setFontColor(new DeviceRgb(0, 100, 0)));
+            }
+        } catch (Exception e) {
+            center.add(new Paragraph("ASCELC").setFont(bold).setFontSize(20)
+                    .setTextAlignment(TextAlignment.CENTER)
+                    .setFontColor(new DeviceRgb(0, 100, 0)));
+        }
+
+        com.itextpdf.layout.element.Cell right =
+                new com.itextpdf.layout.element.Cell()
+                        .setBorder(new SolidBorder(bc, 1)).setPadding(10)
+                        .setVerticalAlignment(VerticalAlignment.MIDDLE);
+        right.add(new Paragraph()
+                .add(new Text("BURKINA FASO\n").setFont(bold).setFontSize(11))
+                .add(new Text("------------\n").setFont(normal).setFontSize(8))
+                .add(new Text("La Patrie ou la Mort,\n")
+                        .setFont(normal).setFontSize(9).setItalic())
+                .add(new Text("nous Vaincrons")
+                        .setFont(normal).setFontSize(9).setItalic())
+                .setTextAlignment(TextAlignment.CENTER));
+
+        t.addCell(left); t.addCell(center); t.addCell(right);
+        doc.add(t);
     }
 
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void delete(UUID id) {
-        Event event = eventRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Événement non trouvé avec l'ID : " + id
-                ));
+    private void addEventInfoPdf(Document doc, Event event,
+                                 PdfFont bold, PdfFont normal) {
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        com.itextpdf.layout.element.Table info =
+                new com.itextpdf.layout.element.Table(
+                        UnitValue.createPercentArray(new float[]{30, 70}));
+        info.setWidth(UnitValue.createPercentValue(100)).setMarginBottom(10);
 
-        log.info("Suppression de l'événement : ID = {}", id);
-        log.info("- {} schedules", event.getSchedules().size());
-        log.info("- {} fichiers", event.getFiles().size());
-        log.info("- {} participants", event.getParticipantEvents().size());
+        info.addCell(createInfoCell("Titre :", bold));
+        info.addCell(createInfoCell(event.getTitle(), normal));
+        info.addCell(createInfoCell("Type :", bold));
+        info.addCell(createInfoCell(getTypeLabel(event.getType().name()), normal));
 
-        if (!event.getFiles().isEmpty()) {
-            event.getFiles().forEach(file -> {
-                try {
-                    Path filePath = Paths.get(file.getFilePath());
-                    if (Files.deleteIfExists(filePath)) {
-                        log.info("✓ Fichier physique supprimé : {}", file.getFileName());
-                    } else {
-                        log.warn("⚠ Fichier physique introuvable : {}", file.getFilePath());
-                    }
-                } catch (Exception e) {
-                    log.error("✗ Erreur suppression fichier {} : {}",
-                            file.getFileName(), e.getMessage());
+        String dates = event.getStartDate().format(fmt);
+        if (!event.getStartDate().equals(event.getEndDate()))
+            dates += " au " + event.getEndDate().format(fmt);
+        info.addCell(createInfoCell("Date :", bold));
+        info.addCell(createInfoCell(dates, normal));
+
+        String lieu = "";
+        if (event.getVille() != null) lieu += event.getVille();
+        if (event.getPays()  != null) {
+            if (!lieu.isEmpty()) lieu += ", ";
+            lieu += event.getPays();
+        }
+        if (!lieu.isEmpty()) {
+            info.addCell(createInfoCell("Lieu :", bold));
+            info.addCell(createInfoCell(lieu, normal));
+        }
+        doc.add(info);
+    }
+
+    private com.itextpdf.layout.element.Cell createInfoCell(
+            String text, PdfFont font) {
+        return new com.itextpdf.layout.element.Cell()
+                .add(new Paragraph(text).setFont(font).setFontSize(10))
+                .setBorder(Border.NO_BORDER).setPadding(3);
+    }
+
+    private void addParticipantsTablePdf(Document doc,
+                                         List<ParticipantEvent> pes,
+                                         PdfFont bold, PdfFont normal) {
+        if (pes == null || pes.isEmpty()) {
+            doc.add(new Paragraph("Aucun participant enregistré")
+                    .setFont(normal).setFontSize(10)
+                    .setTextAlignment(TextAlignment.CENTER)
+                    .setFontColor(ColorConstants.GRAY));
+            return;
+        }
+
+        com.itextpdf.layout.element.Table table =
+                new com.itextpdf.layout.element.Table(
+                        UnitValue.createPercentArray(new float[]{8, 30, 30, 32}));
+        table.setWidth(UnitValue.createPercentValue(100));
+        DeviceRgb hc = new DeviceRgb(220, 220, 220);
+
+        table.addHeaderCell(createHeaderCell("N°",                   bold, hc));
+        table.addHeaderCell(createHeaderCell("Nom et Prénoms",       bold, hc));
+        table.addHeaderCell(createHeaderCell("Structure / Fonction", bold, hc));
+        table.addHeaderCell(createHeaderCell("Signature",            bold, hc));
+
+        int i = 1;
+        for (ParticipantEvent pe : pes) {
+            Participant p = pe.getParticipant();
+            table.addCell(createDataCell(String.valueOf(i++), normal, TextAlignment.CENTER));
+            table.addCell(createDataCell(
+                    p.getFirstName() + " " + p.getLastName(), normal, TextAlignment.LEFT));
+            String org = "";
+            if (p.getStructure() != null) org  = p.getStructure();
+            if (p.getJobTitle()  != null) {
+                if (!org.isEmpty()) org += "\n";
+                org += p.getJobTitle();
+            }
+            table.addCell(createDataCell(
+                    org.isEmpty() ? "-" : org, normal, TextAlignment.LEFT));
+            table.addCell(createDataCell("", normal, TextAlignment.CENTER));
+        }
+        doc.add(table);
+    }
+
+    private com.itextpdf.layout.element.Cell createHeaderCell(
+            String text, PdfFont font, DeviceRgb bg) {
+        return new com.itextpdf.layout.element.Cell()
+                .add(new Paragraph(text).setFont(font).setFontSize(9).setBold())
+                .setBackgroundColor(bg)
+                .setTextAlignment(TextAlignment.CENTER)
+                .setPadding(8)
+                .setBorder(new SolidBorder(ColorConstants.BLACK, 1));
+    }
+
+    private com.itextpdf.layout.element.Cell createDataCell(
+            String text, PdfFont font, TextAlignment align) {
+        return new com.itextpdf.layout.element.Cell()
+                .add(new Paragraph(text).setFont(font).setFontSize(9))
+                .setTextAlignment(align)
+                .setPadding(8).setMinHeight(35)
+                .setBorder(new SolidBorder(ColorConstants.BLACK, 0.5f));
+    }
+
+    private void addSignatureSectionPdf(Document doc, PdfFont normal) {
+        doc.add(new Paragraph("\n\n"));
+        com.itextpdf.layout.element.Table sig =
+                new com.itextpdf.layout.element.Table(
+                        UnitValue.createPercentArray(new float[]{50, 50}));
+        sig.setWidth(UnitValue.createPercentValue(100));
+        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+
+        sig.addCell(new com.itextpdf.layout.element.Cell()
+                .add(new Paragraph("Fait à Ouagadougou, le " + today)
+                        .setFont(normal).setFontSize(10))
+                .setBorder(Border.NO_BORDER));
+        sig.addCell(new com.itextpdf.layout.element.Cell()
+                .add(new Paragraph("Le Responsable")
+                        .setFont(normal).setFontSize(10)
+                        .setTextAlignment(TextAlignment.CENTER))
+                .add(new Paragraph("\n\n\n").setFont(normal).setFontSize(10))
+                .setBorder(Border.NO_BORDER));
+        doc.add(sig);
+    }
+
+    private String getTypeLabel(String type) {
+        return switch (type) {
+            case "REUNION"    -> "Réunion";
+            case "CONFERENCE" -> "Conférence";
+            case "ATELIER"    -> "Atelier";
+            case "SEMINAIRE"  -> "Séminaire";
+            case "FORMATION"  -> "Formation";
+            case "MISSION"    -> "Mission";
+            case "AUTRE"      -> "Autre";
+            default           -> type;
+        };
+    }
+
+    private List<ParticipantDto> parseCSV(byte[] content) throws Exception {
+        List<ParticipantDto> list = new ArrayList<>();
+        try (CSVParser p = CSVFormat.DEFAULT.builder()
+                .setHeader().setSkipHeaderRecord(true).build()
+                .parse(new InputStreamReader(
+                        new ByteArrayInputStream(content), StandardCharsets.UTF_8))) {
+            for (CSVRecord r : p) {
+                list.add(ParticipantDto.builder()
+                        .lastName(r.get("Nom"))
+                        .firstName(r.get("Prénom"))
+                        .email(r.get("Email"))
+                        .phoneNumber(r.get("Téléphone"))
+                        .structure(r.get("Structure"))
+                        .jobTitle(r.get("Fonction"))
+                        .build());
+            }
+        }
+        return list;
+    }
+
+    private List<ParticipantDto> parseExcel(byte[] content) throws Exception {
+        List<ParticipantDto> list = new ArrayList<>();
+        try (Workbook wb = WorkbookFactory.create(
+                new ByteArrayInputStream(content))) {
+            Sheet sheet = wb.getSheetAt(0);
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row != null) {
+                    list.add(ParticipantDto.builder()
+                            .lastName(getCellValue(row.getCell(0)))
+                            .firstName(getCellValue(row.getCell(1)))
+                            .email(getCellValue(row.getCell(2)))
+                            .phoneNumber(getCellValue(row.getCell(3)))
+                            .structure(getCellValue(row.getCell(4)))
+                            .jobTitle(getCellValue(row.getCell(5)))
+                            .build());
                 }
-            });
+            }
         }
-
-        if (!event.getParticipantEvents().isEmpty()) {
-            log.info("Suppression de {} participantEvents", event.getParticipantEvents().size());
-            participantEventRepository.deleteAll(event.getParticipantEvents());
-        }
-
-        if (!event.getSchedules().isEmpty()) {
-            log.info("Suppression de {} schedules", event.getSchedules().size());
-            scheduleRepository.deleteAll(event.getSchedules());
-        }
-
-        if (!event.getFiles().isEmpty()) {
-            log.info("Suppression de {} fichiers en base", event.getFiles().size());
-            event.getFiles().clear();
-        }
-
-        eventRepository.deleteById(id);
-        log.info("✓ Événement supprimé avec succès : ID = {}", id);
+        return list;
     }
+
+    private String getCellValue(org.apache.poi.ss.usermodel.Cell cell) {
+        if (cell == null) return "";
+        return switch (cell.getCellType()) {
+            case STRING  -> cell.getStringCellValue();
+            case NUMERIC -> String.valueOf((long) cell.getNumericCellValue());
+            default      -> "";
+        };
+    }
+
     private EventDto enrichWithStructures(EventDto dto, Event event) {
         dto.setStructures(extractUniqueStructures(event));
         return dto;
@@ -1181,10 +1083,24 @@ public class EventServiceImpl implements EventService {
         return event.getParticipantEvents().stream()
                 .map(pe -> pe.getParticipant().getStructure())
                 .filter(Objects::nonNull)
-                .distinct()
-                .sorted()
-                .toList();
+                .distinct().sorted().toList();
     }
 
 
+    @Override
+    @Transactional
+    public void updateStatusOnly(UUID id, String status) {
+        eventRepository.findById(id).ifPresent(event -> {
+            try {
+                EventStatus newStatus = EventStatus.valueOf(status);
+                // ✅ Pas de TransactionSynchronization → pas d'email
+                event.setStatus(newStatus);
+                event.setUpdatedAt(LocalDateTime.now());
+                eventRepository.save(event);
+                log.info("✅ Statut auto mis à jour : {} → {}", id, status);
+            } catch (IllegalArgumentException e) {
+                log.error("❌ Statut invalide : {}", status);
+            }
+        });
+    }
 }

@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modification d'événement</title>
+    <title>Invitation à un événement</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #fdf0f0;
+            background-color: #f0f4f0;
             color: #333;
         }
         .wrapper {
@@ -19,44 +19,83 @@
             overflow: hidden;
             box-shadow: 0 8px 32px rgba(0,0,0,0.12);
         }
+
+        /* BANNIÈRE */
         .banner {
-            background: linear-gradient(135deg, #a00020 0%, #DC143C 60%, #e83258 100%);
+            background: linear-gradient(135deg, #1a6b1a 0%, #228B22 60%, #2eaa2e 100%);
             padding: 40px 30px 30px;
             text-align: center;
+            position: relative;
+        }
+        .banner::after {
+            content: '';
+            display: block;
+            height: 20px;
+            background: linear-gradient(135deg, #1a6b1a 0%, #228B22 100%);
+            clip-path: ellipse(55% 100% at 50% 0%);
+            margin-top: -1px;
         }
         .banner img {
             max-width: 100px;
             margin-bottom: 16px;
             filter: drop-shadow(0 2px 8px rgba(0,0,0,0.2));
         }
-        .banner h1 { color: #ffffff; font-size: 24px; font-weight: 700; margin-bottom: 6px; }
-        .banner p  { color: rgba(255,255,255,0.85); font-size: 13px; font-style: italic; }
+        .banner h1 {
+            color: #ffffff;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        .banner p {
+            color: rgba(255,255,255,0.85);
+            font-size: 13px;
+            font-style: italic;
+        }
 
+        /* BADGE */
         .badge {
-            background: linear-gradient(135deg, #fff0f2, #fdf5f6);
-            border-left: 5px solid #DC143C;
+            background: linear-gradient(135deg, #e8f5e9, #f1f8f1);
+            border-left: 5px solid #228B22;
             margin: 28px 30px 0;
             padding: 16px 20px;
             border-radius: 0 10px 10px 0;
-            box-shadow: 0 2px 8px rgba(220,20,60,0.08);
+            box-shadow: 0 2px 8px rgba(34,139,34,0.08);
         }
-        .badge .greeting { font-size: 16px; color: #8b0018; font-weight: 600; margin-bottom: 6px; }
-        .badge .message  { font-size: 14px; color: #a00020; line-height: 1.5; }
-        .badge .event-name { font-weight: 700; color: #6b0012; }
+        .badge .greeting {
+            font-size: 16px;
+            color: #1a5c1a;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .badge .message {
+            font-size: 14px;
+            color: #2d6e2d;
+            line-height: 1.5;
+        }
+        .badge .event-name {
+            font-weight: 700;
+            color: #155015;
+        }
 
+        /* CONTENT */
         .content { padding: 28px 30px; }
 
         .section-title {
             font-size: 11px;
             font-weight: 700;
-            color: #DC143C;
+            color: #228B22;
             text-transform: uppercase;
             letter-spacing: 1.5px;
             margin-bottom: 14px;
-            border-bottom: 2px solid #fce4e8;
+            border-bottom: 2px solid #e8f5e9;
             padding-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
+        /* TABLEAU INFOS */
         .info-grid {
             width: 100%;
             border-collapse: separate;
@@ -66,24 +105,28 @@
             overflow: hidden;
             box-shadow: 0 2px 8px rgba(0,0,0,0.06);
         }
-        .info-grid tr:nth-child(even) td { background-color: #fff8f9; }
+        .info-grid tr:first-child td { border-top: none; }
+        .info-grid tr:nth-child(even) td { background-color: #f9fdf9; }
+        .info-grid tr:last-child td { border-bottom: none; }
         .info-grid td {
             padding: 13px 16px;
             font-size: 14px;
-            border-bottom: 1px solid #fce4e8;
+            border-bottom: 1px solid #edf7ed;
             vertical-align: top;
         }
         .info-grid td:first-child {
             font-weight: 700;
-            color: #DC143C;
+            color: #228B22;
             width: 36%;
             white-space: nowrap;
-            background-color: #fff5f6;
+            background-color: #f4fbf4;
         }
+        .info-grid td:last-child { color: #2c2c2c; }
 
+        /* HORAIRE BADGE */
         .time-badge {
             display: inline-block;
-            background: #DC143C;
+            background: #228B22;
             color: white;
             padding: 4px 12px;
             border-radius: 20px;
@@ -91,65 +134,74 @@
             font-weight: 600;
         }
 
+        /* HIGHLIGHT */
         .highlight-box {
-            background: linear-gradient(135deg, #fff3cd, #fef9e7);
-            border: 1px solid #ffc107;
+            background: linear-gradient(135deg, #f0faf0, #e8f5e9);
+            border: 1px solid #b2dfb2;
             border-radius: 10px;
             padding: 16px 20px;
             margin-bottom: 24px;
             font-size: 14px;
-            color: #856404;
+            color: #1a5c1a;
             display: flex;
             align-items: flex-start;
             gap: 12px;
         }
         .highlight-box .icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
 
+        /* BOUTON */
         .btn-wrapper { text-align: center; margin: 8px 0 4px; }
         .btn {
             display: inline-block;
-            background: linear-gradient(135deg, #DC143C, #a00020);
+            background: linear-gradient(135deg, #228B22, #1a6b1a);
             color: #ffffff !important;
             text-decoration: none;
             padding: 14px 40px;
             border-radius: 8px;
             font-size: 15px;
             font-weight: 700;
-            box-shadow: 0 4px 16px rgba(220,20,60,0.35);
+            letter-spacing: 0.3px;
+            box-shadow: 0 4px 16px rgba(34,139,34,0.35);
         }
 
+        /* FOOTER */
         .footer {
             background: #f8f9fa;
             text-align: center;
             padding: 20px 30px;
-            border-top: 2px solid #fce4e8;
+            border-top: 2px solid #e8f5e9;
             margin-top: 24px;
         }
         .footer p { font-size: 12px; color: #999; line-height: 1.9; }
-        .footer .brand { font-weight: 700; color: #DC143C; font-size: 13px; }
+        .footer .brand { font-weight: 700; color: #228B22; font-size: 13px; }
     </style>
 </head>
 <body>
 <div class="wrapper">
 
+    <!-- BANNIÈRE -->
     <div class="banner">
         <img th:src="'cid:logo'" alt="Logo ASCELC"/>
-        <h1>⚠️ Modification d'Événement</h1>
+        <h1>📩 Vous êtes invité(e) !</h1>
         <p>Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
     </div>
 
+    <!-- MESSAGE DE BIENVENUE -->
     <div class="badge">
-        <div class="greeting">Avis de modification 📢</div>
+        <div class="greeting">
+            Bonjour <span th:text="${participant.firstName + ' ' + participant.lastName}"></span> 👋
+        </div>
         <div class="message">
-            L'événement <span class="event-name" th:text="${event.title}"></span>
-            a été modifié. Veuillez consulter les nouvelles informations ci-dessous
-            et mettre à jour votre agenda.
+            Vous avez été inscrit(e) à l'événement
+            <span class="event-name" th:text="${event.title}"></span>.
+            Veuillez en prendre note dans votre agenda.
         </div>
     </div>
 
     <div class="content">
 
-        <div class="section-title">📋 Nouvelles informations</div>
+        <!-- DÉTAILS ÉVÉNEMENT -->
+        <div class="section-title">📋 Détails de l'événement</div>
         <table class="info-grid">
             <tr>
                 <td>Titre</td>
@@ -158,10 +210,6 @@
             <tr>
                 <td>Type</td>
                 <td th:text="${event.type.label}"></td>
-            </tr>
-            <tr>
-                <td>Statut</td>
-                <td th:text="${event.status}"></td>
             </tr>
             <tr>
                 <td>Date de début</td>
@@ -191,7 +239,7 @@
                 <td>
                     <a th:href="${event.meetingLink}"
                        th:text="${event.meetingLink}"
-                       style="color:#DC143C; word-break:break-all;">
+                       style="color:#228B22; word-break:break-all;">
                     </a>
                 </td>
             </tr>
@@ -201,24 +249,26 @@
             </tr>
         </table>
 
+        <!-- RAPPEL -->
         <div class="highlight-box">
             <span class="icon">⚡</span>
             <div>
                 <strong>Action requise :</strong>
-                merci de mettre à jour votre agenda personnel en conséquence.
-                En cas de question, contactez l'organisateur.
+                merci de noter cet événement dans votre agenda personnel.
+                En cas d'empêchement, veuillez en informer l'organisateur.
             </div>
         </div>
 
         <div class="btn-wrapper">
             <a th:href="${baseUrl + '/events/' + event.id}"
                class="btn" target="_blank">
-                Consulter les détails →
+                Voir les détails complets →
             </a>
         </div>
 
     </div>
 
+    <!-- PIED DE PAGE -->
     <div class="footer">
         <p class="brand">CGE Agenda — ASCELC</p>
         <p>Ceci est un email automatique, merci de ne pas y répondre.</p>

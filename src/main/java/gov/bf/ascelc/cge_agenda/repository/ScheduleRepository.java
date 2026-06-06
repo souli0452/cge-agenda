@@ -39,4 +39,8 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * Supprime tous les horaires d'un événement
      */
     void deleteByEventId(UUID eventId);
+
+    @Query("SELECT s FROM Schedule s WHERE s.event.id IN " +
+            "(SELECT pe.event.id FROM ParticipantEvent pe WHERE pe.participant.id = :participantId)")
+    List<Schedule> findAllSchedulesByParticipantId(@Param("participantId") UUID participantId);
 }

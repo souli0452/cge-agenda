@@ -2,11 +2,8 @@ package gov.bf.ascelc.cge_agenda.controller;
 
 import gov.bf.ascelc.cge_agenda.dto.EventDto;
 import gov.bf.ascelc.cge_agenda.dto.ParticipantDto;
-import gov.bf.ascelc.cge_agenda.entities.Event;
 import gov.bf.ascelc.cge_agenda.enums.EventStatus;
 import gov.bf.ascelc.cge_agenda.enums.EventType;
-import gov.bf.ascelc.cge_agenda.repository.EventRepository;
-import gov.bf.ascelc.cge_agenda.service.EmailService;
 import gov.bf.ascelc.cge_agenda.service.EventService;
 import gov.bf.ascelc.cge_agenda.service.PdfService;
 import jakarta.validation.Valid;
@@ -34,8 +31,6 @@ import static gov.bf.ascelc.cge_agenda.utils.ApiUrls.*;
 public class EventController {
 
     private final EventService eventService;
-    private final EventRepository eventRepository;
-    private final EmailService emailService;
     private final PdfService pdfService;
 
     // ==========================================
@@ -53,15 +48,8 @@ public class EventController {
             @PathVariable UUID id,
             @Valid @RequestBody EventDto eventDto
     ) {
+
         EventDto updatedEvent = eventService.update(id, eventDto);
-
-        try {
-            Event event = eventRepository.findById(id).orElseThrow();
-            emailService.sendEventUpdateNotification(event);
-        } catch (Exception e) {
-            log.warn("Erreur notification : {}", e.getMessage());
-        }
-
         return ResponseEntity.ok(updatedEvent);
     }
 
@@ -111,10 +99,13 @@ public class EventController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) EventType type,
             @RequestParam(required = false) EventStatus status,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
     ) {
-        List<EventDto> events = eventService.searchEvents(keyword, type, status, startDate, endDate);
+        List<EventDto> events = eventService.searchEvents(
+                keyword, type, status, startDate, endDate);
         return ResponseEntity.ok(events);
     }
 
@@ -159,14 +150,15 @@ public class EventController {
     }
 
     @GetMapping(GET_EVENT_PARTICIPANTS)
-    public ResponseEntity<List<ParticipantDto>> getEventParticipants(@PathVariable UUID eventId) {
+    public ResponseEntity<List<ParticipantDto>> getEventParticipants(
+            @PathVariable UUID eventId) {
         List<ParticipantDto> participants = eventService.getEventParticipants(eventId);
         return ResponseEntity.ok(participants);
     }
 
-
     @GetMapping("/participants/{participantId}/events")
-    public ResponseEntity<List<EventDto>> getEventsByParticipant(@PathVariable UUID participantId) {
+    public ResponseEntity<List<EventDto>> getEventsByParticipant(
+            @PathVariable UUID participantId) {
         List<EventDto> events = eventService.getEventsByParticipant(participantId);
         return ResponseEntity.ok(events);
     }
@@ -177,27 +169,28 @@ public class EventController {
             @RequestParam("file") MultipartFile file
     ) throws IOException {
         String filename = file.getOriginalFilename();
-        String fileExtension = filename != null ?
-                filename.substring(filename.lastIndexOf(".") + 1).toLowerCase() : "";
+        String fileExtension = filename != null
+                ? filename.substring(filename.lastIndexOf(".") + 1).toLowerCase()
+                : "";
 
-        if (!fileExtension.equals("csv") && !fileExtension.equals("xlsx") &&
+        if (!fileExtension.equals("csv") &&
+                !fileExtension.equals("xlsx") &&
                 !fileExtension.equals("xls")) {
             return ResponseEntity.badRequest().build();
         }
 
         List<ParticipantDto> participants = eventService.importParticipants(
-                eventId,
-                file.getBytes(),
-                fileExtension
-        );
-
+                eventId, file.getBytes(), fileExtension);
         return ResponseEntity.ok(participants);
     }
 
+    // ==========================================
+    // GÉNÉRATION PDF
+    // ==========================================
+
     @GetMapping(GENERATE_ATTENDANCE_SHEET)
     public ResponseEntity<byte[]> generateAttendanceSheet(@PathVariable UUID id) {
-        log.info("Génération de la liste d'émargement PDF pour l'événement : {}", id);
-
+        log.info("Génération liste émargement PDF : {}", id);
         byte[] pdfFile = eventService.generateAttendanceSheet(id);
 
         HttpHeaders headers = new HttpHeaders();
@@ -205,9 +198,7 @@ public class EventController {
         headers.setContentDispositionFormData("attachment",
                 "liste_emargement_" + id + ".pdf");
 
-        return ResponseEntity.ok()
-                .headers(headers)
-                .body(pdfFile);
+        return ResponseEntity.ok().headers(headers).body(pdfFile);
     }
 
     @GetMapping("/calendar/pdf/{year}/{month}")
@@ -215,8 +206,7 @@ public class EventController {
             @PathVariable int year,
             @PathVariable int month
     ) {
-        log.info("Génération du calendrier PDF pour {}/{}", month, year);
-
+        log.info("Génération calendrier PDF : {}/{}", month, year);
         byte[] pdfFile = pdfService.generateCalendarPDF(year, month);
 
         HttpHeaders headers = new HttpHeaders();
@@ -224,15 +214,12 @@ public class EventController {
         headers.setContentDispositionFormData("attachment",
                 "calendrier_" + year + "_" + month + ".pdf");
 
-        return ResponseEntity.ok()
-                .headers(headers)
-                .body(pdfFile);
+        return ResponseEntity.ok().headers(headers).body(pdfFile);
     }
 
     @GetMapping("/compte-rendu/{id}")
     public ResponseEntity<byte[]> generateMeetingReport(@PathVariable UUID id) {
-        log.info("Génération du compte-rendu pour l'événement : {}", id);
-
+        log.info("Génération compte-rendu : {}", id);
         byte[] pdfFile = pdfService.generateMeetingReportPDF(id);
 
         HttpHeaders headers = new HttpHeaders();
@@ -240,15 +227,23 @@ public class EventController {
         headers.setContentDispositionFormData("attachment",
                 "compte_rendu_" + id + ".pdf");
 
-        return ResponseEntity.ok()
-                .headers(headers)
-                .body(pdfFile);
+        return ResponseEntity.ok().headers(headers).body(pdfFile);
     }
+
+
 
     @PostMapping("/test-email/{eventId}")
     public ResponseEntity<String> testEmail(@PathVariable UUID eventId) {
-        Event event = eventRepository.findById(eventId).orElseThrow();
-        emailService.sendEventReminder(event, 7);
-        return ResponseEntity.ok("Email envoyé !");
+        eventService.sendTestReminder(eventId);
+        return ResponseEntity.ok("Email de test envoyé !");
+    }
+
+    @PatchMapping("/status/{id}")
+    public ResponseEntity<Void> updateStatusOnly(
+            @PathVariable UUID id,
+            @RequestParam String status
+    ) {
+        eventService.updateStatusOnly(id, status);
+        return ResponseEntity.noContent().build();
     }
 }

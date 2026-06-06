@@ -2,29 +2,17 @@ package gov.bf.ascelc.cge_agenda.service;
 
 import gov.bf.ascelc.cge_agenda.entities.Event;
 import gov.bf.ascelc.cge_agenda.entities.File;
+import gov.bf.ascelc.cge_agenda.entities.Participant;
 
-/**
- * Service de gestion des emails
- */
+import java.util.UUID;
+
 public interface EmailService {
 
-    /**
-     * Envoyer un rappel d'événement (J-7 ou J-1)
-     * @param event Événement concerné
-     * @param daysUntil Nombre de jours avant l'événement
-     */
-    void sendEventReminder(Event event, int daysUntil);
+    void sendEventReminder(UUID eventId, int daysUntil);
 
-    /**
-     * Notifier les participants d'une modification d'événement
-     * @param event Événement modifié
-     */
-    void sendEventUpdateNotification(Event event);
+    void sendEventUpdateNotification(UUID eventId);
 
-    /**
-     * Notifier les participants d'un nouveau document
-     * @param event Événement concerné
-     * @param file Fichier ajouté
-     */
-    void sendNewDocumentNotification(Event event, File file);
+    void sendNewDocumentNotification(UUID eventId, UUID fileId);
+
+    void sendEventInvitation(UUID eventId, UUID participantId);
 }

@@ -5,175 +5,235 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nouveau document</title>
     <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
+            background-color: #f5f0ff;
             color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f4f4f4;
         }
-        .container {
-            background-color: white;
-            border-radius: 10px;
-            padding: 30px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        .wrapper {
+            max-width: 640px;
+            margin: 30px auto;
+            background: #ffffff;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
         }
-        .header {
+        .banner {
+            background: linear-gradient(135deg, #5e35b1 0%, #7b1fa2 60%, #9c27b0 100%);
+            padding: 40px 30px 30px;
             text-align: center;
-            border-bottom: 3px solid #228B22;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
         }
-        .header h2 {
-            color: #228B22;
-            margin: 10px 0;
+        .banner img {
+            max-width: 100px;
+            margin-bottom: 16px;
+            filter: drop-shadow(0 2px 8px rgba(0,0,0,0.2));
         }
-        .logo {
-            max-width: 150px;
-            height: auto;
-            margin-bottom: 15px;
+        .banner h1 { color: #ffffff; font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+        .banner p  { color: rgba(255,255,255,0.85); font-size: 13px; font-style: italic; }
+
+        .badge {
+            background: linear-gradient(135deg, #f3e5f5, #fce4ec);
+            border-left: 5px solid #7b1fa2;
+            margin: 28px 30px 0;
+            padding: 16px 20px;
+            border-radius: 0 10px 10px 0;
+            box-shadow: 0 2px 8px rgba(123,31,162,0.08);
         }
-        .alert-info {
-            background-color: #90EE90;
-            border-left: 4px solid #228B22;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 5px;
+        .badge .greeting { font-size: 16px; color: #4a148c; font-weight: 600; margin-bottom: 6px; }
+        .badge .message  { font-size: 14px; color: #6a1b9a; line-height: 1.5; }
+        .badge .event-name { font-weight: 700; color: #4a148c; }
+
+        .content { padding: 28px 30px; }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #7b1fa2;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 14px;
+            border-bottom: 2px solid #f3e5f5;
+            padding-bottom: 8px;
         }
-        .alert-info h3 {
-            color: #228B22;
-            margin-top: 0;
-        }
-        .document-info {
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin: 20px 0;
-            border: 2px solid #90EE90;
-        }
-        .document-info h3 {
-            color: #228B22;
-            margin-top: 0;
-        }
-        .detail-row {
-            padding: 10px 0;
-            border-bottom: 1px solid #dee2e6;
-        }
-        .detail-row:last-child {
-            border-bottom: none;
-        }
-        .detail-label {
-            font-weight: bold;
-            color: #228B22;
-            display: inline-block;
-            width: 150px;
+
+        /* ICÔNE FICHIER */
+        .file-card {
+            background: linear-gradient(135deg, #f3e5f5, #f8f0ff);
+            border: 2px solid #ce93d8;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            box-shadow: 0 2px 8px rgba(123,31,162,0.08);
         }
         .file-icon {
-            font-size: 48px;
-            text-align: center;
-            margin: 20px 0;
+            width: 56px;
+            height: 56px;
+            background: #7b1fa2;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(123,31,162,0.35);
         }
-        .footer {
-            text-align: center;
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 2px solid #228B22;
-            color: #6c757d;
+        .file-info .file-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: #4a148c;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+        .file-info .file-meta {
             font-size: 12px;
+            color: #7b1fa2;
         }
-        .footer strong {
-            color: #228B22;
+
+        .info-grid {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-bottom: 24px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
         }
-        .button {
+        .info-grid tr:nth-child(even) td { background-color: #fdf5ff; }
+        .info-grid td {
+            padding: 13px 16px;
+            font-size: 14px;
+            border-bottom: 1px solid #f3e5f5;
+            vertical-align: top;
+        }
+        .info-grid td:first-child {
+            font-weight: 700;
+            color: #7b1fa2;
+            width: 36%;
+            white-space: nowrap;
+            background-color: #faf0ff;
+        }
+
+        .btn-wrapper { text-align: center; margin: 8px 0 12px; }
+        .btn {
             display: inline-block;
-            padding: 12px 30px;
-            background-color: #228B22;
-            color: white !important;
+            background: linear-gradient(135deg, #7b1fa2, #5e35b1);
+            color: #ffffff !important;
             text-decoration: none;
-            border-radius: 5px;
-            margin: 20px 0;
-            font-weight: bold;
+            padding: 14px 40px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 700;
+            box-shadow: 0 4px 16px rgba(123,31,162,0.35);
+            margin-bottom: 12px;
         }
-        .button:hover {
-            background-color: #1a6b1a;
+        .btn-secondary {
+            display: inline-block;
+            color: #7b1fa2 !important;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+            border: 2px solid #ce93d8;
+            padding: 10px 28px;
+            border-radius: 8px;
         }
+
+        .footer {
+            background: #f8f9fa;
+            text-align: center;
+            padding: 20px 30px;
+            border-top: 2px solid #f3e5f5;
+            margin-top: 24px;
+        }
+        .footer p { font-size: 12px; color: #999; line-height: 1.9; }
+        .footer .brand { font-weight: 700; color: #7b1fa2; font-size: 13px; }
     </style>
 </head>
 <body>
-<div class="container">
-    <div class="header">
-        <img th:src="'cid:logo'" alt="Logo ASCELC" class="logo">
-        <h2>📎 Nouveau Document Ajouté</h2>
-        <p style="color: #228B22; font-style: italic;">Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
+<div class="wrapper">
+
+    <div class="banner">
+        <img th:src="'cid:logo'" alt="Logo ASCELC"/>
+        <h1>📎 Nouveau Document Ajouté</h1>
+        <p>Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
     </div>
 
-    <div class="alert-info">
-        <h3>✅ Document disponible</h3>
-        <p>Un nouveau document a été ajouté à l'événement <strong th:text="${event.title}"></strong>.</p>
-        <p style="margin: 0; font-size: 14px;">Vous pouvez le consulter dès maintenant.</p>
-    </div>
-
-    <div class="file-icon">📄</div>
-
-    <div class="document-info">
-        <h3>📋 Détails du document</h3>
-
-        <div class="detail-row">
-            <span class="detail-label">Nom du fichier :</span>
-            <span th:text="${file.fileName}"></span>
-        </div>
-
-        <div class="detail-row">
-            <span class="detail-label">Type :</span>
-            <span th:text="${file.fileType}"></span>
-        </div>
-
-        <div class="detail-row" th:if="${file.fileSize}">
-            <span class="detail-label">Taille :</span>
-            <span th:text="${#numbers.formatDecimal(file.fileSize / 1024, 1, 2)} + ' KB'"></span>
-        </div>
-
-        <div class="detail-row" th:if="${file.description}">
-            <span class="detail-label">Description :</span>
-            <p th:text="${file.description}" style="margin: 10px 0 0 0;"></p>
-        </div>
-
-        <div class="detail-row">
-            <span class="detail-label">Événement :</span>
-            <span th:text="${event.title}"></span>
-        </div>
-
-        <div class="detail-row">
-            <span class="detail-label">Date d'ajout :</span>
-            <span th:text="${#temporals.format(file.createdAt, 'dd/MM/yyyy à HH:mm')}"></span>
+    <div class="badge">
+        <div class="greeting">Nouveau document disponible 📂</div>
+        <div class="message">
+            Un nouveau document a été ajouté à l'événement
+            <span class="event-name" th:text="${event.title}"></span>.
+            Vous pouvez le consulter et le télécharger dès maintenant.
         </div>
     </div>
 
-    <div style="text-align: center;">
-        <a th:href="'http://localhost:8081/api/v1/cge-agenda/file/download/' + ${file.id}"
-           class="button"
-           target="_blank">
-            📥 Télécharger le document
-        </a>
-    </div>
+    <div class="content">
 
-    <!-- Lien vers l'événement -->
-    <div style="text-align: center; margin-top: 10px;">
-        <a th:href="'http://localhost:8081/api/v1/cge-agenda/event/' + ${event.id}"
-           style="color: #228B22; text-decoration: underline; font-size: 14px;"
-           target="_blank">
-            Voir l'événement complet
-        </a>
+        <!-- CARTE FICHIER -->
+        <div class="section-title">📎 Document ajouté</div>
+        <div class="file-card">
+            <div class="file-icon">📄</div>
+            <div class="file-info">
+                <div class="file-name" th:text="${file.fileName}"></div>
+                <div class="file-meta">
+                    <span th:if="${file.fileType != null}" th:text="${file.fileType + ' • '}"></span>
+                    <span th:if="${file.fileSize != null}"
+                          th:text="${#numbers.formatDecimal(file.fileSize / 1024.0, 1, 2) + ' KB'}">
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- DÉTAILS ÉVÉNEMENT -->
+        <div class="section-title">📋 Événement concerné</div>
+        <table class="info-grid">
+            <tr>
+                <td>Événement</td>
+                <td><strong th:text="${event.title}"></strong></td>
+            </tr>
+            <tr>
+                <td>Type</td>
+                <td th:text="${event.type.label}"></td>
+            </tr>
+            <tr>
+                <td>Date de début</td>
+                <td th:text="${#temporals.format(event.startDate, 'dd MMMM yyyy', #locale)}"></td>
+            </tr>
+            <tr th:if="${file.description != null and !#strings.isEmpty(file.description)}">
+                <td>Description</td>
+                <td th:text="${file.description}" style="line-height:1.5;"></td>
+            </tr>
+            <tr>
+                <td>Ajouté le</td>
+                <td th:text="${#temporals.format(file.createdAt, 'dd/MM/yyyy à HH:mm')}"></td>
+            </tr>
+        </table>
+
+        <div class="btn-wrapper">
+            <a th:href="${apiUrl + '/api/v1/cge-agenda/file/download/' + file.id}"
+               class="btn" target="_blank">
+                📥 Télécharger le document
+            </a>
+        </div>
+
+        <div class="btn-wrapper">
+            <a th:href="${baseUrl + '/events/' + event.id}"
+               class="btn-secondary" target="_blank">
+                Voir l'événement complet →
+            </a>
+        </div>
+
     </div>
 
     <div class="footer">
-        <p><strong>CGE Agenda - ASCELC</strong></p>
+        <p class="brand">CGE Agenda — ASCELC</p>
         <p>Ceci est un email automatique, merci de ne pas y répondre.</p>
-        <p>Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
-        <p>Burkina Faso</p>
+        <p>Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption — Burkina Faso</p>
     </div>
+
 </div>
 </body>
 </html>

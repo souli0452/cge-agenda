@@ -16,6 +16,7 @@ public interface EventService {
      * Vérifie la disponibilité des participants
      */
     EventDto create(EventDto dto);
+    void sendTestReminder(UUID eventId);
 
     /**
      * Mise à jour d'un événement existant
@@ -94,5 +95,6 @@ public interface EventService {
 
     List<EventDto> getEventsByParticipant(UUID participantId);
 
+    void updateStatusOnly(UUID id, String status);
 
 }
