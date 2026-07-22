@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Délégation de participation</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #e0f7fa; color: #333; }
+        .wrapper { max-width: 640px; margin: 30px auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
+        .banner { background: linear-gradient(135deg, #00695c 0%, #00838f 60%, #00acc1 100%); padding: 40px 30px 30px; text-align: center; }
+        .banner img { max-width: 100px; margin-bottom: 16px; }
+        .banner h1 { color: #ffffff; font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+        .banner p { color: rgba(255,255,255,0.85); font-size: 13px; font-style: italic; }
+        .content { padding: 28px 30px; }
+        .info-grid { width: 100%; border-collapse: separate; border-spacing: 0; margin-bottom: 24px; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .info-grid tr:nth-child(even) td { background-color: #f1fafb; }
+        .info-grid td { padding: 13px 16px; font-size: 14px; border-bottom: 1px solid #b2ebf2; }
+        .info-grid td:first-child { font-weight: 700; color: #00695c; width: 36%; white-space: nowrap; background-color: #e0f7fa; }
+        .btn-wrapper { text-align: center; margin: 8px 0 4px; }
+        .btn { display: inline-block; background: linear-gradient(135deg, #00838f, #00695c); color: #ffffff !important; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-size: 15px; font-weight: 700; }
+        .footer { background: #f8f9fa; text-align: center; padding: 20px 30px; border-top: 2px solid #b2ebf2; margin-top: 24px; }
+        .footer p { font-size: 12px; color: #999; line-height: 1.9; }
+        .footer .brand { font-weight: 700; color: #00695c; font-size: 13px; }
+    </style>
+</head>
+<body>
+<div class="wrapper">
+    <div class="banner">
+        <img th:src="'cid:logo'" alt="Logo ASCELC"/>
+        <h1>👤 Délégation de participation</h1>
+        <p>Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
+    </div>
+    <div class="content">
+        <p style="margin-bottom:20px;">
+            Vous avez été désigné(e) pour représenter le CGE à l'événement suivant :
+        </p>
+        <table class="info-grid">
+            <tr><td>Titre</td><td><strong th:text="${event.title}"></strong></td></tr>
+            <tr><td>Date de début</td><td th:text="${#temporals.format(event.startDate, 'dd MMMM yyyy', #locale)}"></td></tr>
+            <tr th:if="${event.delegueMotif != null and !#strings.isEmpty(event.delegueMotif)}">
+                <td>Motif</td><td th:text="${event.delegueMotif}"></td>
+            </tr>
+        </table>
+        <div class="btn-wrapper">
+            <a th:href="${baseUrl + '/events/' + event.id}" class="btn" target="_blank">📄 Voir les détails →</a>
+        </div>
+    </div>
+    <div class="footer">
+        <p class="brand">CGE Agenda — ASCELC</p>
+        <p>Ceci est un email automatique, merci de ne pas y répondre.</p>
+    </div>
+</div>
+</body>
+</html>

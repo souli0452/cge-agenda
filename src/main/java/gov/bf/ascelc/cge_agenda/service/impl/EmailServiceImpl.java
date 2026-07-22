@@ -14,6 +14,8 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -25,8 +27,10 @@ import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 
 import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -41,6 +45,7 @@ public class EmailServiceImpl implements EmailService {
     private final EventRepository eventRepository;
     private final ScheduleRepository scheduleRepository;
     private final FileRepository fileRepository;
+    private final Keycloak keycloakAdminClient;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
@@ -50,6 +55,9 @@ public class EmailServiceImpl implements EmailService {
 
     @Value("${app.api-url}")
     private String apiUrl;   // ex: http://localhost:8081
+
+    @Value("${keycloak.admin.realm}")
+    private String realmName;
 
     private static final DateTimeFormatter TIME_FMT =
             DateTimeFormatter.ofPattern("HH:mm");
@@ -241,6 +249,228 @@ public class EmailServiceImpl implements EmailService {
             log.error("❌ Erreur document eventId={} : {}",
                     eventId, e.getMessage());
         }
+    }
+
+    // ==========================================
+    // DEMANDE DE VALIDATION (CGE/ADMIN)
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendValidationRequest(UUID eventId) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null) {
+                log.error("❌ Event introuvable : {}", eventId);
+                return;
+            }
+            List<String> recipients = getCgeAndAdminEmails();
+            if (recipients.isEmpty()) {
+                log.warn("⚠ Aucun destinataire CGE/ADMIN trouvé pour la demande de validation");
+                return;
+            }
+            Context context = buildBaseContext();
+            context.setVariable("event", event);
+            String htmlContent = templateEngine.process("email/validation-request", context);
+            String subject = "Demande de validation : " + event.getTitle();
+            for (String to : recipients) {
+                sendEmail(to, subject, htmlContent);
+            }
+            log.info("✅ Demande de validation envoyée à {} destinataire(s)", recipients.size());
+        } catch (Exception e) {
+            log.error("❌ Erreur demande de validation eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // ÉVÉNEMENT REJETÉ
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendEventRejected(UUID eventId) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null || event.getCreatorEmail() == null) {
+                log.warn("⚠ Impossible de notifier le rejet (event ou créateur introuvable) : {}", eventId);
+                return;
+            }
+            Context context = buildBaseContext();
+            context.setVariable("event", event);
+            String htmlContent = templateEngine.process("email/rejected", context);
+            sendEmail(event.getCreatorEmail(), "Événement rejeté : " + event.getTitle(), htmlContent);
+            log.info("✅ Notification de rejet envoyée à {}", event.getCreatorEmail());
+        } catch (Exception e) {
+            log.error("❌ Erreur notification rejet eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // CORRECTIONS DEMANDÉES
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendChangesRequested(UUID eventId) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null || event.getCreatorEmail() == null) {
+                log.warn("⚠ Impossible de notifier les corrections (event ou créateur introuvable) : {}", eventId);
+                return;
+            }
+            Context context = buildBaseContext();
+            context.setVariable("event", event);
+            String htmlContent = templateEngine.process("email/changes-requested", context);
+            sendEmail(event.getCreatorEmail(), "Corrections demandées : " + event.getTitle(), htmlContent);
+            log.info("✅ Notification de corrections envoyée à {}", event.getCreatorEmail());
+        } catch (Exception e) {
+            log.error("❌ Erreur notification corrections eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // CORRECTIONS APPORTÉES (RE-SOUMISSION)
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendAmendmentsCorrected(UUID eventId) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null) {
+                log.error("❌ Event introuvable : {}", eventId);
+                return;
+            }
+            List<String> recipients = getCgeAndAdminEmails();
+            if (recipients.isEmpty()) {
+                log.warn("⚠ Aucun destinataire CGE/ADMIN trouvé pour la re-soumission");
+                return;
+            }
+            Context context = buildBaseContext();
+            context.setVariable("event", event);
+            String htmlContent = templateEngine.process("email/amendments-corrected", context);
+            String subject = "Corrections apportées : " + event.getTitle();
+            for (String to : recipients) {
+                sendEmail(to, subject, htmlContent);
+            }
+            log.info("✅ Notification de re-soumission envoyée à {} destinataire(s)", recipients.size());
+        } catch (Exception e) {
+            log.error("❌ Erreur notification re-soumission eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // DÉLÉGATION DE PARTICIPATION
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendDelegationNotice(UUID eventId) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null || event.getDelegueEmail() == null) {
+                log.warn("⚠ Impossible de notifier la délégation (event ou délégué introuvable) : {}", eventId);
+                return;
+            }
+            Context context = buildBaseContext();
+            context.setVariable("event", event);
+            String htmlContent = templateEngine.process("email/delegation", context);
+            sendEmail(event.getDelegueEmail(), "Délégation de participation : " + event.getTitle(), htmlContent);
+            log.info("✅ Notification de délégation envoyée à {}", event.getDelegueEmail());
+        } catch (Exception e) {
+            log.error("❌ Erreur notification délégation eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // ANNULATION D'ÉVÉNEMENT
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendEventCancellation(UUID eventId, String reason) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null) {
+                log.error("❌ Event introuvable : {}", eventId);
+                return;
+            }
+            List<Participant> participants =
+                    participantEventRepository.findParticipantsByEventId(eventId);
+            if (participants.isEmpty()) {
+                log.warn("⚠ Aucun participant pour l'événement : {}", eventId);
+                return;
+            }
+
+            Context context = buildBaseContext();
+            context.setVariable("event", event);
+            context.setVariable("reason", reason);
+            String htmlContent = templateEngine.process("email/cancellation", context);
+            String subject = "Annulation : " + event.getTitle();
+
+            for (Participant participant : participants) {
+                sendEmail(participant.getEmail(), subject, htmlContent);
+            }
+            log.info("✅ Notifications d'annulation → {} participants pour '{}'",
+                    participants.size(), event.getTitle());
+        } catch (Exception e) {
+            log.error("❌ Erreur notification annulation eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // REPORT D'ÉVÉNEMENT
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendEventPostponement(UUID eventId) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null) {
+                log.error("❌ Event introuvable : {}", eventId);
+                return;
+            }
+            List<Participant> participants =
+                    participantEventRepository.findParticipantsByEventId(eventId);
+            if (participants.isEmpty()) {
+                log.warn("⚠ Aucun participant pour l'événement : {}", eventId);
+                return;
+            }
+
+            Context context = buildBaseContext();
+            context.setVariable("event", event);
+            String htmlContent = templateEngine.process("email/postponement", context);
+            String subject = "Report : " + event.getTitle();
+
+            for (Participant participant : participants) {
+                sendEmail(participant.getEmail(), subject, htmlContent);
+            }
+            log.info("✅ Notifications de report → {} participants pour '{}'",
+                    participants.size(), event.getTitle());
+        } catch (Exception e) {
+            log.error("❌ Erreur notification report eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // DESTINATAIRES CGE/ADMIN (Keycloak)
+    // ==========================================
+    private List<String> getCgeAndAdminEmails() {
+        Set<String> emails = new HashSet<>();
+        for (String roleName : new String[]{"CGE", "ADMIN"}) {
+            try {
+                for (UserRepresentation user : keycloakAdminClient.realm(realmName)
+                        .roles().get(roleName).getUserMembers()) {
+                    if (user.getEmail() != null && Boolean.TRUE.equals(user.isEnabled())) {
+                        emails.add(user.getEmail());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("⚠ Impossible de lister les membres du rôle {} : {}", roleName, e.getMessage());
+            }
+        }
+        return emails.stream().toList();
     }
 
     // ==========================================

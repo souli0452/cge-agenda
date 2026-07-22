@@ -36,4 +36,8 @@ public class ParticipantDto extends AuditEntityDto {
 
    // @NotNull(message = "Le type de participant est obligatoire")
     private ParticipantType participantType;
+
+    private boolean deleted;
+    private java.time.LocalDateTime deletedAt;
+    private String deletedBy;
 }

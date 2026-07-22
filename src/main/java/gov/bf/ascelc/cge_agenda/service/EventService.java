@@ -97,4 +97,59 @@ public interface EventService {
 
     void updateStatusOnly(UUID id, String status);
 
+    /**
+     * Récupérer les événements mis à la corbeille (suppression douce)
+     */
+    List<EventDto> getCorbeille();
+
+    /**
+     * Restaurer un événement depuis la corbeille
+     */
+    EventDto restoreEvent(UUID id);
+
+    /**
+     * Supprimer définitivement un événement (et ses fichiers/horaires/participants)
+     */
+    void deleteEventPermanently(UUID id);
+
+    // ==========================================
+    // WORKFLOW DE VALIDATION CGE
+    // ==========================================
+
+    /**
+     * Soumettre un brouillon à la validation CGE (BROUILLON → EN_ATTENTE_VALIDATION)
+     */
+    EventDto submitDraft(UUID id);
+
+    /**
+     * Valider un événement (EN_ATTENTE_VALIDATION → PLANIFIE), envoie les invitations
+     */
+    EventDto validateEvent(UUID id, String comment);
+
+    /**
+     * Rejeter un événement (EN_ATTENTE_VALIDATION ou A_CORRIGER → REJETE)
+     */
+    EventDto rejectEvent(UUID id, String reason);
+
+    /**
+     * Demander des modifications au créateur (EN_ATTENTE_VALIDATION → A_CORRIGER)
+     */
+    EventDto requestChanges(UUID id, String suggestions);
+
+    /**
+     * Déléguer la participation à un événement PLANIFIE/EN_COURS
+     */
+    EventDto delegateParticipation(UUID id, String delegueNom, String delegueEmail, String delegueMotif);
+
+    /**
+     * Ajouter/modifier une observation CGE sur un événement PLANIFIE/EN_COURS
+     */
+    EventDto addObservation(UUID id, String observation);
+
+    /**
+     * Rédiger/modifier le compte-rendu officiel d'une réunion TERMINE.
+     * Autorisé au CGE, à l'ADMIN, ou au créateur de l'événement.
+     */
+    EventDto saveCompteRendu(UUID id, String points, String decisions, String actions);
+
 }

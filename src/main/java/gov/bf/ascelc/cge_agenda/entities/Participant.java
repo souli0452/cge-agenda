@@ -46,6 +46,16 @@ public class Participant extends AuditEntity {
     @Column(name = "participant_type", nullable = false, length = 50)
     private ParticipantType participantType;
 
+    @Column(name = "deleted", nullable = false)
+    @Builder.Default
+    private boolean deleted = false;
+
+    @Column(name = "deleted_at")
+    private java.time.LocalDateTime deletedAt;
+
+    @Column(name = "deleted_by", length = 255)
+    private String deletedBy;
+
     @OneToMany(mappedBy = "participant", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private Set<ParticipantEvent> participantEvents = new HashSet<>();

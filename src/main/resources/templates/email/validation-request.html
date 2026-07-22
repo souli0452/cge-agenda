@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Événement à valider</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #fff8e1; color: #333; }
+        .wrapper { max-width: 640px; margin: 30px auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
+        .banner { background: linear-gradient(135deg, #e65100 0%, #f57c00 60%, #ff9800 100%); padding: 40px 30px 30px; text-align: center; }
+        .banner img { max-width: 100px; margin-bottom: 16px; }
+        .banner h1 { color: #ffffff; font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+        .banner p { color: rgba(255,255,255,0.85); font-size: 13px; font-style: italic; }
+        .content { padding: 28px 30px; }
+        .info-grid { width: 100%; border-collapse: separate; border-spacing: 0; margin-bottom: 24px; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .info-grid tr:nth-child(even) td { background-color: #fff8ec; }
+        .info-grid td { padding: 13px 16px; font-size: 14px; border-bottom: 1px solid #ffe0b2; }
+        .info-grid td:first-child { font-weight: 700; color: #e65100; width: 36%; white-space: nowrap; background-color: #fff3e0; }
+        .btn-wrapper { text-align: center; margin: 8px 0 4px; }
+        .btn { display: inline-block; background: linear-gradient(135deg, #f57c00, #e65100); color: #ffffff !important; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-size: 15px; font-weight: 700; }
+        .footer { background: #f8f9fa; text-align: center; padding: 20px 30px; border-top: 2px solid #ffe0b2; margin-top: 24px; }
+        .footer p { font-size: 12px; color: #999; line-height: 1.9; }
+        .footer .brand { font-weight: 700; color: #e65100; font-size: 13px; }
+    </style>
+</head>
+<body>
+<div class="wrapper">
+    <div class="banner">
+        <img th:src="'cid:logo'" alt="Logo ASCELC"/>
+        <h1>🔔 Événement à valider</h1>
+        <p>Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
+    </div>
+    <div class="content">
+        <p style="margin-bottom:20px;">
+            Un événement a été soumis et attend votre validation.
+        </p>
+        <table class="info-grid">
+            <tr><td>Titre</td><td><strong th:text="${event.title}"></strong></td></tr>
+            <tr><td>Type</td><td th:text="${event.type.label}"></td></tr>
+            <tr><td>Créé par</td><td th:text="${event.creatorEmail}"></td></tr>
+            <tr><td>Date de début</td><td th:text="${#temporals.format(event.startDate, 'dd MMMM yyyy', #locale)}"></td></tr>
+            <tr><td>Date de fin</td><td th:text="${#temporals.format(event.endDate, 'dd MMMM yyyy', #locale)}"></td></tr>
+        </table>
+        <div class="btn-wrapper">
+            <a th:href="${baseUrl + '/validation'}" class="btn" target="_blank">📄 Ouvrir la validation CGE →</a>
+        </div>
+    </div>
+    <div class="footer">
+        <p class="brand">CGE Agenda — ASCELC</p>
+        <p>Ceci est un email automatique, merci de ne pas y répondre.</p>
+    </div>
+</div>
+</body>
+</html>

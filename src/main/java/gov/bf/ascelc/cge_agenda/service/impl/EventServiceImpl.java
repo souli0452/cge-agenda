@@ -41,6 +41,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -95,6 +98,9 @@ public class EventServiceImpl implements EventService {
 
         Event event = eventMapper.toEntity(dto);
         event.setCreatedAt(LocalDateTime.now());
+        event.setCreatorEmail(currentUserEmail());
+        event.setCreatorUsername(currentUsername());
+        event.setCreatorRole(currentUserRole());
         event = eventRepository.save(event);
         log.info("event sauvegardé ID={}", event.getId());
 
@@ -162,6 +168,16 @@ public class EventServiceImpl implements EventService {
                             "\n\n[ANNULÉ] Raison : " + reason);
                     event.setUpdatedAt(LocalDateTime.now());
                     Event updated = eventRepository.save(event);
+                    final UUID uid = updated.getId();
+
+                    TransactionSynchronizationManager.registerSynchronization(
+                            new TransactionSynchronization() {
+                                @Override
+                                public void afterCommit() {
+                                    emailService.sendEventCancellation(uid, reason);
+                                }
+                            });
+
                     log.info("Événement annulé : ID = {}", id);
                     return eventMapper.toDto(updated);
                 })
@@ -217,6 +233,15 @@ public class EventServiceImpl implements EventService {
                         log.info("Horaires recréés pour les nouvelles dates");
                     }
 
+                    final UUID uid = updated.getId();
+                    TransactionSynchronizationManager.registerSynchronization(
+                            new TransactionSynchronization() {
+                                @Override
+                                public void afterCommit() {
+                                    emailService.sendEventPostponement(uid);
+                                }
+                            });
+
                     log.info("Événement reporté : ID = {}", id);
                     return eventMapper.toDto(updated);
                 })
@@ -235,7 +260,9 @@ public class EventServiceImpl implements EventService {
                                        LocalDate startDate, LocalDate endDate) {
         log.info("Recherche : keyword={}, type={}, status={}",
                 keyword, type, status);
-        List<Event> events = eventRepository.findAll();
+        List<Event> events = eventRepository.findAll().stream()
+                .filter(e -> !e.isDeleted())
+                .collect(Collectors.toList());
 
         if (keyword != null && !keyword.trim().isEmpty()) {
             String lk = keyword.toLowerCase();
@@ -454,12 +481,30 @@ public class EventServiceImpl implements EventService {
 
                     log.info("🔍 update id={} hasChanges={}", id, hasChanges);
 
+                    boolean wasACorriger = existing.getStatus() == EventStatus.A_CORRIGER;
+
                     eventMapper.updateEntityFromDto(eventDto, existing);
                     existing.setUpdatedAt(LocalDateTime.now());
-                    Event updated = eventRepository.save(existing);
 
-                    if (hasChanges) {
-                        final UUID uid = updated.getId();
+                    // Re-soumission automatique après correction demandée par le CGE
+                    if (wasACorriger && hasChanges) {
+                        existing.setStatus(EventStatus.EN_ATTENTE_VALIDATION);
+                        existing.setChangeSuggestions(null);
+                    }
+
+                    Event updated = eventRepository.save(existing);
+                    final UUID uid = updated.getId();
+
+                    if (wasACorriger && hasChanges) {
+                        TransactionSynchronizationManager.registerSynchronization(
+                                new TransactionSynchronization() {
+                                    @Override
+                                    public void afterCommit() {
+                                        emailService.sendAmendmentsCorrected(uid);
+                                    }
+                                });
+                        log.info("✅ Re-soumission automatique après corrections → {}", uid);
+                    } else if (hasChanges) {
                         TransactionSynchronizationManager.registerSynchronization(
                                 new TransactionSynchronization() {
                                     @Override
@@ -542,7 +587,45 @@ public class EventServiceImpl implements EventService {
                         HttpStatus.NOT_FOUND,
                         "Événement non trouvé : " + id));
 
-        log.info("Suppression : {} schedules, {} fichiers, {} participants",
+        event.setDeleted(true);
+        eventRepository.save(event);
+        log.info("✓ Événement mis à la corbeille : {}", id);
+    }
+
+    // ==========================================
+    // CORBEILLE
+    // ==========================================
+    @Override
+    @Transactional(readOnly = true)
+    public List<EventDto> getCorbeille() {
+        return eventRepository.findAllDeleted().stream()
+                .map(e -> enrichWithStructures(eventMapper.toDto(e), e))
+                .toList();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public EventDto restoreEvent(UUID id) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Événement non trouvé : " + id));
+
+        event.setDeleted(false);
+        event = eventRepository.save(event);
+        log.info("✓ Événement restauré : {}", id);
+        return enrichWithStructures(eventMapper.toDto(event), event);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteEventPermanently(UUID id) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Événement non trouvé : " + id));
+
+        log.info("Suppression définitive : {} schedules, {} fichiers, {} participants",
                 event.getSchedules().size(),
                 event.getFiles().size(),
                 event.getParticipantEvents().size());
@@ -568,7 +651,267 @@ public class EventServiceImpl implements EventService {
             event.getFiles().clear();
 
         eventRepository.deleteById(id);
-        log.info("✓ Événement supprimé : {}", id);
+        log.info("✓ Événement supprimé définitivement : {}", id);
+    }
+
+    // ==========================================
+    // WORKFLOW DE VALIDATION CGE
+    // ==========================================
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public EventDto submitDraft(UUID id) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+
+        if (event.getStatus() != EventStatus.BROUILLON) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Seul un événement en brouillon peut être soumis à validation");
+        }
+
+        event.setStatus(EventStatus.EN_ATTENTE_VALIDATION);
+        event.setUpdatedAt(LocalDateTime.now());
+        Event saved = eventRepository.save(event);
+        final UUID uid = saved.getId();
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        emailService.sendValidationRequest(uid);
+                    }
+                });
+
+        log.info("✓ Événement soumis à validation : {}", id);
+        return eventMapper.toDto(saved);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public EventDto validateEvent(UUID id, String comment) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+
+        if (event.getStatus() != EventStatus.EN_ATTENTE_VALIDATION) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Seul un événement en attente de validation peut être validé");
+        }
+
+        event.setStatus(EventStatus.PLANIFIE);
+        event.setValidationComment(comment);
+        event.setUpdatedAt(LocalDateTime.now());
+        Event saved = eventRepository.save(event);
+
+        final List<UUID> participantIds = saved.getParticipantEvents().stream()
+                .map(pe -> pe.getParticipant().getId())
+                .toList();
+        final UUID uid = saved.getId();
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        for (UUID pid : participantIds) {
+                            emailService.sendEventInvitation(uid, pid);
+                        }
+                    }
+                });
+
+        log.info("✓ Événement validé : {} ({} invitation(s))", id, participantIds.size());
+        return eventMapper.toDto(saved);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public EventDto rejectEvent(UUID id, String reason) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+
+        if (event.getStatus() != EventStatus.EN_ATTENTE_VALIDATION
+                && event.getStatus() != EventStatus.A_CORRIGER) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Seul un événement en attente de validation ou à corriger peut être rejeté");
+        }
+
+        event.setStatus(EventStatus.REJETE);
+        event.setRejectionReason(reason);
+        event.setUpdatedAt(LocalDateTime.now());
+        Event saved = eventRepository.save(event);
+        final UUID uid = saved.getId();
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        emailService.sendEventRejected(uid);
+                    }
+                });
+
+        log.info("✓ Événement rejeté : {}", id);
+        return eventMapper.toDto(saved);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public EventDto requestChanges(UUID id, String suggestions) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+
+        if (event.getStatus() != EventStatus.EN_ATTENTE_VALIDATION) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Seul un événement en attente de validation peut recevoir une demande de modifications");
+        }
+
+        event.setStatus(EventStatus.A_CORRIGER);
+        event.setChangeSuggestions(suggestions);
+        event.setUpdatedAt(LocalDateTime.now());
+        Event saved = eventRepository.save(event);
+        final UUID uid = saved.getId();
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        emailService.sendChangesRequested(uid);
+                    }
+                });
+
+        log.info("✓ Modifications demandées : {}", id);
+        return eventMapper.toDto(saved);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public EventDto delegateParticipation(UUID id, String delegueNom, String delegueEmail, String delegueMotif) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+
+        if (event.getStatus() != EventStatus.PLANIFIE && event.getStatus() != EventStatus.EN_COURS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "La délégation n'est possible que pour un événement planifié ou en cours");
+        }
+
+        event.setDelegueNom(delegueNom);
+        event.setDelegueEmail(delegueEmail);
+        event.setDelegueMotif(delegueMotif);
+        event.setEstDelegue(true);
+        event.setDelegueDate(LocalDateTime.now());
+        event.setDelegueParEmail(currentUserEmail());
+        event.setUpdatedAt(LocalDateTime.now());
+        Event saved = eventRepository.save(event);
+        final UUID uid = saved.getId();
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        emailService.sendDelegationNotice(uid);
+                    }
+                });
+
+        log.info("✓ Délégation enregistrée : {} → {}", id, delegueEmail);
+        return eventMapper.toDto(saved);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public EventDto addObservation(UUID id, String observation) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+
+        if (event.getStatus() != EventStatus.PLANIFIE && event.getStatus() != EventStatus.EN_COURS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "L'observation n'est possible que pour un événement planifié ou en cours");
+        }
+
+        event.setValidationComment(observation);
+        event.setUpdatedAt(LocalDateTime.now());
+        Event saved = eventRepository.save(event);
+
+        log.info("✓ Observation enregistrée : {}", id);
+        return eventMapper.toDto(saved);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public EventDto saveCompteRendu(UUID id, String points, String decisions, String actions) {
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+
+        if (event.getStatus() != EventStatus.TERMINE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Le compte-rendu n'est disponible que pour un événement terminé");
+        }
+
+        if (!isCgeOrAdmin() && !isCreator(event)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Seuls le CGE, l'administrateur ou le créateur peuvent rédiger le compte-rendu");
+        }
+
+        event.setCompteRenduPoints(points);
+        event.setCompteRenduDecisions(decisions);
+        event.setCompteRenduActions(actions);
+        event.setCompteRenduRedigePar(currentUserEmail());
+        event.setCompteRenduDate(LocalDateTime.now());
+        event.setUpdatedAt(LocalDateTime.now());
+        Event saved = eventRepository.save(event);
+
+        log.info("✓ Compte-rendu enregistré : {}", id);
+        return eventMapper.toDto(saved);
+    }
+
+    private boolean isCgeOrAdmin() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return false;
+        }
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_CGE"));
+    }
+
+    private boolean isCreator(Event event) {
+        String email = currentUserEmail();
+        return email != null && email.equalsIgnoreCase(event.getCreatorEmail());
+    }
+
+    private String currentUserEmail() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+            String email = jwt.getClaim("email");
+            return email != null ? email : jwt.getClaim("preferred_username");
+        }
+        return null;
+    }
+
+    private String currentUsername() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+            return jwt.getClaim("preferred_username");
+        }
+        return null;
+    }
+
+    private String currentUserRole() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return null;
+        }
+        return authentication.getAuthorities().stream()
+                .map(a -> a.getAuthority())
+                .filter(a -> a.startsWith("ROLE_"))
+                .map(a -> a.substring(5))
+                .filter(r -> !r.equals("offline_access")
+                        && !r.equals("uma_authorization")
+                        && !r.startsWith("default-roles"))
+                .findFirst()
+                .orElse(null);
     }
 
     // ==========================================
@@ -618,17 +961,21 @@ public class EventServiceImpl implements EventService {
                                              List<Schedule> newSchedules) {
         List<UUID[]> invitations = new ArrayList<>();
 
+        List<Participant> resolved = new ArrayList<>();
+        for (ParticipantDto dto : dtos) {
+            resolved.add(resolveParticipant(dto));
+        }
+
         // Vérifier les doublons d'email
         Set<String> emails = new HashSet<>();
-        for (ParticipantDto dto : dtos) {
-            if (!emails.add(dto.getEmail().toLowerCase())) {
+        for (Participant p : resolved) {
+            if (!emails.add(p.getEmail().toLowerCase())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Email en double : " + dto.getEmail());
+                        "Email en double : " + p.getEmail());
             }
         }
 
-        for (ParticipantDto dto : dtos) {
-            Participant p = findOrCreateParticipant(dto);
+        for (Participant p : resolved) {
             validateParticipantAvailability(p, newSchedules);
 
             if (!participantEventRepository.existsByParticipantIdAndEventId(
@@ -641,6 +988,20 @@ public class EventServiceImpl implements EventService {
             }
         }
         return invitations;
+    }
+
+    /**
+     * Résout un participant DTO : réutilise le participant existant si un ID est fourni
+     * (évite de créer un doublon fantôme quand l'email n'est pas renseigné), sinon
+     * recherche/crée par email.
+     */
+    private Participant resolveParticipant(ParticipantDto dto) {
+        if (dto.getId() != null) {
+            return participantRepository.findById(dto.getId())
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND, "Participant non trouvé : " + dto.getId()));
+        }
+        return findOrCreateParticipant(dto);
     }
 
     private Participant findOrCreateParticipant(ParticipantDto dto) {

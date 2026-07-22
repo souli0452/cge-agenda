@@ -5,6 +5,10 @@ import gov.bf.ascelc.cge_agenda.enums.ParticipantType;
 import gov.bf.ascelc.cge_agenda.service.ParticipantService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PagedModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -87,5 +91,48 @@ public class ParticipantController {
     public ResponseEntity<List<ParticipantDto>> searchByName(@RequestParam String query) {
         List<ParticipantDto> participants = participantService.searchByName(query);
         return ResponseEntity.ok(participants);
+    }
+
+    /**
+     * Liste paginée, filtrable et triable des participants (hors corbeille)
+     */
+    @GetMapping(GET_PARTICIPANTS_PAGED)
+    public ResponseEntity<PagedModel<ParticipantDto>> getPaged(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "lastName") String sortBy,
+            @RequestParam(defaultValue = "asc") String direction,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) ParticipantType type
+    ) {
+        Sort sort = Sort.by(Sort.Direction.fromString(direction), sortBy);
+        Page<ParticipantDto> result = participantService.findPaged(
+                keyword, type, PageRequest.of(page, size, sort));
+        return ResponseEntity.ok(new PagedModel<>(result));
+    }
+
+    /**
+     * Participants dans la corbeille
+     */
+    @GetMapping(GET_PARTICIPANT_CORBEILLE)
+    public ResponseEntity<List<ParticipantDto>> getCorbeille() {
+        return ResponseEntity.ok(participantService.getCorbeille());
+    }
+
+    /**
+     * Restaurer un participant depuis la corbeille
+     */
+    @PutMapping(RESTORE_PARTICIPANT)
+    public ResponseEntity<ParticipantDto> restore(@PathVariable UUID id) {
+        return ResponseEntity.ok(participantService.restore(id));
+    }
+
+    /**
+     * Supprimer définitivement un participant
+     */
+    @DeleteMapping(DELETE_PARTICIPANT_PERMANENT)
+    public ResponseEntity<Void> deletePermanently(@PathVariable UUID id) {
+        participantService.deletePermanently(id);
+        return ResponseEntity.noContent().build();
     }
 }

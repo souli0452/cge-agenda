@@ -15,4 +15,18 @@ public interface EmailService {
     void sendNewDocumentNotification(UUID eventId, UUID fileId);
 
     void sendEventInvitation(UUID eventId, UUID participantId);
+
+    void sendValidationRequest(UUID eventId);
+
+    void sendEventRejected(UUID eventId);
+
+    void sendChangesRequested(UUID eventId);
+
+    void sendAmendmentsCorrected(UUID eventId);
+
+    void sendDelegationNotice(UUID eventId);
+
+    void sendEventCancellation(UUID eventId, String reason);
+
+    void sendEventPostponement(UUID eventId);
 }

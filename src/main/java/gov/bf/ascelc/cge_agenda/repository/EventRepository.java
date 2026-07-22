@@ -40,12 +40,16 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     @Query("SELECT e FROM Event e " +
             "LEFT JOIN FETCH e.participantEvents pe " +
             "LEFT JOIN FETCH pe.participant " +
+            "WHERE e.deleted = false " +
             "ORDER BY " +
             "CASE e.status WHEN 'EN_COURS' THEN 1 WHEN 'PLANIFIE' THEN 2 WHEN 'REPORTER' THEN 3 WHEN 'TERMINE' THEN 4 WHEN 'ANNULE' THEN 5 ELSE 6 END ASC, " +
             "CASE WHEN e.startDate >= CURRENT_DATE THEN 0 ELSE 1 END ASC, " +
             "CASE WHEN e.startDate >= CURRENT_DATE THEN e.startDate END ASC, " +
             "e.startDate DESC")
     List<Event> findAllWithParticipantsOrderedByStatusAndProximity();
+
+    @Query("SELECT e FROM Event e WHERE e.deleted = true ORDER BY e.updatedAt DESC")
+    List<Event> findAllDeleted();
 
     @Query("SELECT e FROM Event e WHERE " +
             "(:keyword IS NULL OR LOWER(e.title) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(e.description) LIKE LOWER(CONCAT('%', :keyword, '%'))) AND " +

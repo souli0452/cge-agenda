@@ -79,6 +79,26 @@ public class EventController {
     }
 
     // ==========================================
+    // CORBEILLE
+    // ==========================================
+
+    @GetMapping(GET_EVENT_CORBEILLE)
+    public ResponseEntity<List<EventDto>> getCorbeille() {
+        return ResponseEntity.ok(eventService.getCorbeille());
+    }
+
+    @PatchMapping(RESTORE_EVENT)
+    public ResponseEntity<EventDto> restoreEvent(@PathVariable UUID id) {
+        return ResponseEntity.ok(eventService.restoreEvent(id));
+    }
+
+    @DeleteMapping(DELETE_EVENT_PERMANENT)
+    public ResponseEntity<Void> deleteEventPermanently(@PathVariable UUID id) {
+        eventService.deleteEventPermanently(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ==========================================
     // CONSULTATION D'ÉVÉNEMENTS
     // ==========================================
 
@@ -245,5 +265,66 @@ public class EventController {
     ) {
         eventService.updateStatusOnly(id, status);
         return ResponseEntity.noContent().build();
+    }
+
+    // ==========================================
+    // WORKFLOW DE VALIDATION CGE
+    // ==========================================
+
+    @PatchMapping(SUBMIT_EVENT)
+    public ResponseEntity<EventDto> submitDraft(@PathVariable UUID id) {
+        return ResponseEntity.ok(eventService.submitDraft(id));
+    }
+
+    @PatchMapping(VALIDATE_EVENT)
+    public ResponseEntity<EventDto> validateEvent(
+            @PathVariable UUID id,
+            @RequestParam(required = false, defaultValue = "") String comment
+    ) {
+        return ResponseEntity.ok(eventService.validateEvent(id, comment));
+    }
+
+    @PatchMapping(REJECT_EVENT)
+    public ResponseEntity<EventDto> rejectEvent(
+            @PathVariable UUID id,
+            @RequestParam String reason
+    ) {
+        return ResponseEntity.ok(eventService.rejectEvent(id, reason));
+    }
+
+    @PatchMapping(REQUEST_CHANGES_EVENT)
+    public ResponseEntity<EventDto> requestChanges(
+            @PathVariable UUID id,
+            @RequestParam String suggestions
+    ) {
+        return ResponseEntity.ok(eventService.requestChanges(id, suggestions));
+    }
+
+    @PatchMapping(DELEGATE_EVENT)
+    public ResponseEntity<EventDto> delegateParticipation(
+            @PathVariable UUID id,
+            @RequestParam String delegueNom,
+            @RequestParam String delegueEmail,
+            @RequestParam(required = false, defaultValue = "") String delegueMotif
+    ) {
+        return ResponseEntity.ok(eventService.delegateParticipation(id, delegueNom, delegueEmail, delegueMotif));
+    }
+
+    @PatchMapping(ADD_OBSERVATION_EVENT)
+    public ResponseEntity<EventDto> addObservation(
+            @PathVariable UUID id,
+            @RequestParam String observation
+    ) {
+        return ResponseEntity.ok(eventService.addObservation(id, observation));
+    }
+
+    @PutMapping(SAVE_COMPTE_RENDU)
+    public ResponseEntity<EventDto> saveCompteRendu(
+            @PathVariable UUID id,
+            @RequestParam(required = false, defaultValue = "") String points,
+            @RequestParam(required = false, defaultValue = "") String decisions,
+            @RequestParam(required = false, defaultValue = "") String actions
+    ) {
+        return ResponseEntity.ok(eventService.saveCompteRendu(id, points, decisions, actions));
     }
 }

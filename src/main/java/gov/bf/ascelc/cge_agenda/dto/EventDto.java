@@ -64,6 +64,28 @@ public class EventDto extends AuditEntityDto {
 
     private List<String> structures;
 
+    // ==========================================
+    // WORKFLOW DE VALIDATION CGE
+    // ==========================================
+    private String changeSuggestions;
+    private String rejectionReason;
+    private String validationComment;
+    private String creatorEmail;
+    private String creatorUsername;
+    private String creatorRole;
+    private String delegueNom;
+    private String delegueEmail;
+    private String delegueMotif;
+    private boolean estDelegue;
+    private java.time.LocalDateTime delegueDate;
+    private String delegueParEmail;
+
+    private String compteRenduPoints;
+    private String compteRenduDecisions;
+    private String compteRenduActions;
+    private String compteRenduRedigePar;
+    private java.time.LocalDateTime compteRenduDate;
+
 
     public boolean isGlobalScheduleMode() {
         return globalStartTime != null
