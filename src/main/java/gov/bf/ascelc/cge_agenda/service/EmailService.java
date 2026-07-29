@@ -29,4 +29,11 @@ public interface EmailService {
     void sendEventCancellation(UUID eventId, String reason);
 
     void sendEventPostponement(UUID eventId);
+
+    /**
+     * Retente l'envoi de tous les emails en attente de la file d'attente (outbox)
+     * dont l'heure de nouvelle tentative est passée. Appelé périodiquement par
+     * un job planifié — ne doit normalement pas être invoqué manuellement.
+     */
+    void processOutbox();
 }

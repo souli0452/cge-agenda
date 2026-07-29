@@ -523,7 +523,7 @@ public class PdfServiceImpl implements PdfService {
             case SEMINAIRE  -> "Séminaire";
             case FORMATION  -> "Formation";
             case MISSION    -> "Mission";
-            case AUDIANCE   -> "Audience";
+            case AUDIENCE   -> "Audience";
             case AUTRE      -> "Autre";
         };
     }

@@ -920,22 +920,20 @@ public class EventServiceImpl implements EventService {
     @Override
     public boolean isParticipantAvailable(UUID participantId, LocalDate date,
                                           LocalTime startTime, LocalTime endTime) {
-        Participant participant = participantRepository.findById(participantId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Participant non trouvé : " + participantId));
+        if (!participantRepository.existsById(participantId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Participant non trouvé : " + participantId);
+        }
 
         Schedule temp = Schedule.builder()
                 .dateJour(date).startTime(startTime).endTime(endTime).build();
 
-        for (Event e : participantEventRepository
-                .findEventsByParticipantId(participantId)) {
-            for (Schedule s : scheduleRepository.findByEventId(e.getId())) {
-                if (hasTimeConflict(temp, s)) {
-                    log.warn("Participant {} non dispo : conflit avec '{}'",
-                            participantId, e.getTitle());
-                    return false;
-                }
+        for (Schedule s : scheduleRepository.findAllSchedulesByParticipantId(participantId)) {
+            if (hasTimeConflict(temp, s)) {
+                log.warn("Participant {} non dispo : conflit avec l'événement {}",
+                        participantId, s.getEvent().getId());
+                return false;
             }
         }
         return true;

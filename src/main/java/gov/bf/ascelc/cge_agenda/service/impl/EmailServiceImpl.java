@@ -1,9 +1,11 @@
 package gov.bf.ascelc.cge_agenda.service.impl;
 
+import gov.bf.ascelc.cge_agenda.entities.EmailOutbox;
 import gov.bf.ascelc.cge_agenda.entities.Event;
 import gov.bf.ascelc.cge_agenda.entities.File;
 import gov.bf.ascelc.cge_agenda.entities.Participant;
 import gov.bf.ascelc.cge_agenda.entities.Schedule;
+import gov.bf.ascelc.cge_agenda.enums.EmailOutboxStatus;
 import gov.bf.ascelc.cge_agenda.repository.EventRepository;
 import gov.bf.ascelc.cge_agenda.repository.FileRepository;
 import gov.bf.ascelc.cge_agenda.repository.ParticipantEventRepository;
@@ -26,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.List;
@@ -46,6 +50,7 @@ public class EmailServiceImpl implements EmailService {
     private final ScheduleRepository scheduleRepository;
     private final FileRepository fileRepository;
     private final Keycloak keycloakAdminClient;
+    private final EmailOutboxService emailOutboxService;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
@@ -494,35 +499,94 @@ public class EmailServiceImpl implements EmailService {
     }
 
     // ==========================================
-    // ENVOI EMAIL — avec logo inline
+    // ENVOI EMAIL — via file d'attente persistante (outbox)
     // ==========================================
+    // Calendrier de nouvelles tentatives : couvre aussi bien une coupure SMTP de
+    // quelques secondes (première retentative à 1 min) qu'une panne de plusieurs
+    // jours (dernier palier à 24h, répété jusqu'à MAX_ATTEMPTS).
+    private static final List<Duration> BACKOFF_SCHEDULE = List.of(
+            Duration.ofMinutes(1), Duration.ofMinutes(5), Duration.ofMinutes(15),
+            Duration.ofMinutes(30), Duration.ofHours(1), Duration.ofHours(2),
+            Duration.ofHours(4), Duration.ofHours(8), Duration.ofHours(12),
+            Duration.ofHours(24)
+    );
+    private static final int MAX_ATTEMPTS = 20; // ~12 jours de tentatives au total
+
     private void sendEmail(String to, String subject, String htmlContent) {
-        try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper =
-                    new MimeMessageHelper(message, true, "UTF-8");
+        sendEmail(to, subject, htmlContent, null);
+    }
 
-            helper.setFrom(fromEmail);
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true);
+    /**
+     * Enregistre l'email dans l'outbox (transaction dédiée, indépendante de la
+     * transaction readOnly de la méthode appelante) puis tente un envoi immédiat.
+     * En cas d'échec (SMTP indisponible), la tentative suivante sera retentée par
+     * {@link #processOutbox()} selon {@link #BACKOFF_SCHEDULE} — l'email n'est jamais
+     * perdu tant que MAX_ATTEMPTS n'est pas atteint.
+     */
+    private void sendEmail(String to, String subject, String htmlContent, String context) {
+        EmailOutbox item = emailOutboxService.create(to, subject, htmlContent, context);
+        attemptDelivery(item);
+    }
 
-            try {
-                ClassPathResource logo =
-                        new ClassPathResource("static/images/logo.png");
-                if (logo.exists()) {
-                    helper.addInline("logo", logo);
-                }
-            } catch (Exception e) {
-                log.warn("⚠ Logo non trouvé, email envoyé sans logo");
-            }
-
-            mailSender.send(message);
-            log.debug("📧 Email envoyé à : {}", to);
-
-        } catch (MessagingException e) {
-            log.error("❌ Erreur envoi email à {} : {}", to, e.getMessage());
-            throw new RuntimeException("Erreur envoi email", e);
+    /**
+     * Retente l'envoi de tous les emails en attente dont l'heure de nouvelle tentative
+     * est passée. Appelé périodiquement par {@code EmailOutboxScheduler}.
+     */
+    @Override
+    public void processOutbox() {
+        List<EmailOutbox> due = emailOutboxService.findDue();
+        if (due.isEmpty()) {
+            return;
         }
+        log.info("📬 Outbox email : {} envoi(s) à retenter", due.size());
+        due.forEach(this::attemptDelivery);
+    }
+
+    private void attemptDelivery(EmailOutbox item) {
+        try {
+            sendRawEmail(item.getRecipientEmail(), item.getSubject(), item.getHtmlContent());
+            emailOutboxService.markSent(item);
+            log.debug("📧 Email envoyé à : {} (tentative {})", item.getRecipientEmail(), item.getAttempts() + 1);
+        } catch (Exception e) {
+            int attempts = item.getAttempts() + 1;
+
+            if (attempts >= MAX_ATTEMPTS) {
+                emailOutboxService.markFailedAttempt(
+                        item, attempts, item.getNextAttemptAt(), EmailOutboxStatus.FAILED, e.getMessage());
+                log.error("❌ Email à {} abandonné après {} tentatives : {}",
+                        item.getRecipientEmail(), attempts, e.getMessage());
+            } else {
+                Duration backoff = BACKOFF_SCHEDULE.get(
+                        Math.min(attempts - 1, BACKOFF_SCHEDULE.size() - 1));
+                LocalDateTime nextAttemptAt = LocalDateTime.now().plus(backoff);
+                emailOutboxService.markFailedAttempt(
+                        item, attempts, nextAttemptAt, EmailOutboxStatus.PENDING, e.getMessage());
+                log.warn("⚠ Échec envoi à {} (tentative {}/{}), nouvelle tentative dans {} : {}",
+                        item.getRecipientEmail(), attempts, MAX_ATTEMPTS, backoff, e.getMessage());
+            }
+        }
+    }
+
+    private void sendRawEmail(String to, String subject, String htmlContent) throws MessagingException {
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper =
+                new MimeMessageHelper(message, true, "UTF-8");
+
+        helper.setFrom(fromEmail);
+        helper.setTo(to);
+        helper.setSubject(subject);
+        helper.setText(htmlContent, true);
+
+        try {
+            ClassPathResource logo =
+                    new ClassPathResource("static/images/logo.png");
+            if (logo.exists()) {
+                helper.addInline("logo", logo);
+            }
+        } catch (Exception e) {
+            log.warn("⚠ Logo non trouvé, email envoyé sans logo");
+        }
+
+        mailSender.send(message);
     }
 }

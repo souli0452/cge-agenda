@@ -28,7 +28,7 @@ public class AuditServiceImpl implements AuditService {
 
     /** Rôles métier par ordre de priorité pour choisir le rôle "principal" affiché dans le journal. */
     private static final List<String> ROLE_PRIORITY = List.of(
-            "ADMIN", "CGE", "DIRECTEUR_CABINET", "PROTOCOLE", "SECRETAIRE", "DELEGUE", "USER"
+            "ADMIN", "CGE", "DIRECTEUR_CABINET", "PROTOCOLE", "SECRETAIRE", "DELEGUE"
     );
 
     private final AuditLogRepository auditLogRepository;

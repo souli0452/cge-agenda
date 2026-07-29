@@ -3,7 +3,6 @@ package gov.bf.ascelc.cge_agenda.entities;
 import gov.bf.ascelc.cge_agenda.abstracts.AuditEntity;
 import gov.bf.ascelc.cge_agenda.enums.EventStatus;
 import gov.bf.ascelc.cge_agenda.enums.EventType;
-import gov.bf.ascelc.cge_agenda.utils.EventUtils;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -134,54 +133,6 @@ public class Event extends AuditEntity {
     @Builder.Default
     private Set<ParticipantEvent> participantEvents = new HashSet<>();
 
-
-    /**
-     * Vérifie si l'événement est multi-jours
-     */
-    @Transient
-    public boolean isMultiJours() {
-        return EventUtils.isMultiDayEvent(this);
-    }
-
-    /**
-     * Obtient le nombre de jours
-     */
-    @Transient
-    public long getNombreJours() {
-        return EventUtils.getEventDuration(this);
-    }
-
-    /**
-     * Vérifie si l'événement se déroule à une date donnée
-     */
-    @Transient
-    public boolean seDerouleLeJour(LocalDate date) {
-        return EventUtils.eventOccursOnDate(this, date);
-    }
-
-    /**
-     * Vérifie si l'événement est en cours
-     */
-    @Transient
-    public boolean isEnCours() {
-        return EventUtils.isEventOngoing(this);
-    }
-
-    /**
-     * Vérifie si l'événement est terminé
-     */
-    @Transient
-    public boolean isTermine() {
-        return EventUtils.isEventFinished(this);
-    }
-
-    /**
-     * Vérifie si l'événement est à venir
-     */
-    @Transient
-    public boolean isAVenir() {
-        return EventUtils.isEventUpcoming(this);
-    }
 
     public void addSchedule(Schedule schedule) {
         schedules.add(schedule);

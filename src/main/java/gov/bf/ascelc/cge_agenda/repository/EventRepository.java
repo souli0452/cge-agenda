@@ -37,9 +37,11 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     @Query("SELECT e FROM Event e WHERE YEAR(e.startDate) = :year ORDER BY e.startDate DESC")
     List<Event> findByYear(@Param("year") int year);
 
-    @Query("SELECT e FROM Event e " +
+    @Query("SELECT DISTINCT e FROM Event e " +
             "LEFT JOIN FETCH e.participantEvents pe " +
             "LEFT JOIN FETCH pe.participant " +
+            "LEFT JOIN FETCH e.schedules " +
+            "LEFT JOIN FETCH e.files " +
             "WHERE e.deleted = false " +
             "ORDER BY " +
             "CASE e.status WHEN 'EN_COURS' THEN 1 WHEN 'PLANIFIE' THEN 2 WHEN 'REPORTER' THEN 3 WHEN 'TERMINE' THEN 4 WHEN 'ANNULE' THEN 5 ELSE 6 END ASC, " +
@@ -48,7 +50,12 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
             "e.startDate DESC")
     List<Event> findAllWithParticipantsOrderedByStatusAndProximity();
 
-    @Query("SELECT e FROM Event e WHERE e.deleted = true ORDER BY e.updatedAt DESC")
+    @Query("SELECT DISTINCT e FROM Event e " +
+            "LEFT JOIN FETCH e.participantEvents pe " +
+            "LEFT JOIN FETCH pe.participant " +
+            "LEFT JOIN FETCH e.schedules " +
+            "LEFT JOIN FETCH e.files " +
+            "WHERE e.deleted = true ORDER BY e.updatedAt DESC")
     List<Event> findAllDeleted();
 
     @Query("SELECT e FROM Event e WHERE " +

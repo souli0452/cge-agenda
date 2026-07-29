@@ -44,7 +44,10 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     @Override
     public List<KeycloakUserDto> getUsers() {
-        return realm().users().list().stream()
+        // L'API admin Keycloak n'offre pas de récupération groupée des rôles par
+        // utilisateur : un appel réseau par utilisateur est nécessaire. On parallélise
+        // ces appels indépendants pour réduire le temps total plutôt que de les enchaîner.
+        return realm().users().list().parallelStream()
                 .map(this::toDto)
                 .toList();
     }
