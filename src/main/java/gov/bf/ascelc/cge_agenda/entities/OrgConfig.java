@@ -46,6 +46,9 @@ public class OrgConfig extends AuditEntity {
     @Column(name = "subject_validation_request")
     private String subjectValidationRequest;
 
+    @Column(name = "subject_validated")
+    private String subjectValidated;
+
     @Column(name = "subject_new_document")
     private String subjectNewDocument;
 
