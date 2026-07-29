@@ -1,5 +1,6 @@
 package gov.bf.ascelc.cge_agenda.service.impl;
 
+import gov.bf.ascelc.cge_agenda.dto.OrgConfigDto;
 import gov.bf.ascelc.cge_agenda.entities.EmailOutbox;
 import gov.bf.ascelc.cge_agenda.entities.Event;
 import gov.bf.ascelc.cge_agenda.entities.File;
@@ -12,6 +13,8 @@ import gov.bf.ascelc.cge_agenda.repository.ParticipantEventRepository;
 import gov.bf.ascelc.cge_agenda.repository.ParticipantRepository;
 import gov.bf.ascelc.cge_agenda.repository.ScheduleRepository;
 import gov.bf.ascelc.cge_agenda.service.EmailService;
+import gov.bf.ascelc.cge_agenda.service.OrgConfigService;
+import gov.bf.ascelc.cge_agenda.utils.EmailTemplateVariables;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
@@ -31,9 +34,11 @@ import org.thymeleaf.spring6.SpringTemplateEngine;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -51,6 +56,7 @@ public class EmailServiceImpl implements EmailService {
     private final FileRepository fileRepository;
     private final Keycloak keycloakAdminClient;
     private final EmailOutboxService emailOutboxService;
+    private final OrgConfigService orgConfigService;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
@@ -67,12 +73,37 @@ public class EmailServiceImpl implements EmailService {
     private static final DateTimeFormatter TIME_FMT =
             DateTimeFormatter.ofPattern("HH:mm");
 
+    private static final DateTimeFormatter DATE_FMT =
+            DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.FRENCH);
+
 
     private Context buildBaseContext() {
         Context context = new Context(Locale.FRENCH);
         context.setVariable("baseUrl", baseUrl);
         context.setVariable("apiUrl",  apiUrl);
         return context;
+    }
+
+    private Map<String, String> buildVariables(Event event, Participant participant) {
+        Map<String, String> vars = new HashMap<>();
+        vars.put("evenement", event.getTitle());
+        if (participant != null) {
+            vars.put("participant", participant.getFirstName() + " " + participant.getLastName());
+        }
+        vars.put("date_debut", event.getStartDate() != null ? event.getStartDate().format(DATE_FMT) : "");
+        vars.put("date_fin", event.getEndDate() != null ? event.getEndDate().format(DATE_FMT) : "");
+        vars.put("lieu", event.getVille() != null ? event.getVille() : "");
+        return vars;
+    }
+
+    private String resolveSubject(String configured, String fallback, Map<String, String> vars) {
+        String template = (configured != null && !configured.isBlank()) ? configured : fallback;
+        return EmailTemplateVariables.substitute(template, vars);
+    }
+
+    private String resolveBody(String configured, String fallback, Map<String, String> vars) {
+        String template = (configured != null && !configured.isBlank()) ? configured : fallback;
+        return EmailTemplateVariables.substitute(template, vars);
     }
 
     // ==========================================
@@ -102,14 +133,21 @@ public class EmailServiceImpl implements EmailService {
 
             String[] horaires = getHoraires(eventId);
 
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, participant);
+
             Context context = buildBaseContext();
             context.setVariable("event",       event);
             context.setVariable("participant", participant);
             context.setVariable("heureDebut",  horaires[0]);
             context.setVariable("heureFin",    horaires[1]);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyInvitation(),
+                    "Vous avez été inscrit(e) à l'événement {evenement}. Veuillez en prendre note dans votre agenda.",
+                    vars));
 
             String htmlContent = templateEngine.process("email/invitation", context);
-            String subject     = "Invitation : " + event.getTitle();
+            String subject     = resolveSubject(orgConfig.getSubjectInvitation(),
+                    "Invitation : {evenement}", vars);
 
             sendEmail(participant.getEmail(), subject, htmlContent);
             log.info("✅ Invitation envoyée à {}", participant.getEmail());
@@ -144,14 +182,20 @@ public class EmailServiceImpl implements EmailService {
 
             String[] horaires = getHoraires(eventId);
 
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
             Context context = buildBaseContext();
             context.setVariable("event",      event);
             context.setVariable("daysUntil",  daysUntil);
             context.setVariable("heureDebut", horaires[0]);
             context.setVariable("heureFin",   horaires[1]);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyReminder(),
+                    "Rappel : l'événement {evenement} approche.", vars));
 
             String htmlContent = templateEngine.process("email/reminder", context);
-            String subject     = "Rappel J-" + daysUntil + " : " + event.getTitle();
+            String subject     = resolveSubject(orgConfig.getSubjectReminder(),
+                    "Rappel : {evenement}", vars);
 
             for (Participant participant : participants) {
                 sendEmail(participant.getEmail(), subject, htmlContent);
@@ -189,13 +233,20 @@ public class EmailServiceImpl implements EmailService {
 
             String[] horaires = getHoraires(eventId);
 
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
             Context context = buildBaseContext();
             context.setVariable("event",      event);
             context.setVariable("heureDebut", horaires[0]);
             context.setVariable("heureFin",   horaires[1]);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyEventUpdate(),
+                    "L'événement {evenement} a été modifié. Veuillez consulter les nouvelles informations ci-dessous et mettre à jour votre agenda.",
+                    vars));
 
             String htmlContent = templateEngine.process("email/event-update", context);
-            String subject     = "Modification : " + event.getTitle();
+            String subject     = resolveSubject(orgConfig.getSubjectEventUpdate(),
+                    "Mise à jour : {evenement}", vars);
 
             for (Participant participant : participants) {
                 sendEmail(participant.getEmail(), subject, htmlContent);
@@ -237,12 +288,19 @@ public class EmailServiceImpl implements EmailService {
                 return;
             }
 
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
             Context context = buildBaseContext();
             context.setVariable("event", event);
             context.setVariable("file",  file);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyNewDocument(),
+                    "Un nouveau document a été ajouté à l'événement {evenement}. Vous pouvez le consulter et le télécharger dès maintenant.",
+                    vars));
 
             String htmlContent = templateEngine.process("email/new-document", context);
-            String subject     = "Nouveau document : " + event.getTitle();
+            String subject     = resolveSubject(orgConfig.getSubjectNewDocument(),
+                    "Nouveau document : {evenement}", vars);
 
             for (Participant participant : participants) {
                 sendEmail(participant.getEmail(), subject, htmlContent);
@@ -274,10 +332,16 @@ public class EmailServiceImpl implements EmailService {
                 log.warn("⚠ Aucun destinataire CGE/ADMIN trouvé pour la demande de validation");
                 return;
             }
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
             Context context = buildBaseContext();
             context.setVariable("event", event);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyValidationRequest(),
+                    "Un événement a été soumis et attend votre validation.", vars));
             String htmlContent = templateEngine.process("email/validation-request", context);
-            String subject = "Demande de validation : " + event.getTitle();
+            String subject = resolveSubject(orgConfig.getSubjectValidationRequest(),
+                    "Demande de validation : {evenement}", vars);
             for (String to : recipients) {
                 sendEmail(to, subject, htmlContent);
             }
@@ -300,10 +364,17 @@ public class EmailServiceImpl implements EmailService {
                 log.warn("⚠ Impossible de notifier le rejet (event ou créateur introuvable) : {}", eventId);
                 return;
             }
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
             Context context = buildBaseContext();
             context.setVariable("event", event);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyRejected(),
+                    "Votre événement {evenement} a été rejeté. Le motif est détaillé ci-dessous.", vars));
             String htmlContent = templateEngine.process("email/rejected", context);
-            sendEmail(event.getCreatorEmail(), "Événement rejeté : " + event.getTitle(), htmlContent);
+            String subject = resolveSubject(orgConfig.getSubjectRejected(),
+                    "Événement rejeté : {evenement}", vars);
+            sendEmail(event.getCreatorEmail(), subject, htmlContent);
             log.info("✅ Notification de rejet envoyée à {}", event.getCreatorEmail());
         } catch (Exception e) {
             log.error("❌ Erreur notification rejet eventId={} : {}", eventId, e.getMessage());
@@ -323,10 +394,18 @@ public class EmailServiceImpl implements EmailService {
                 log.warn("⚠ Impossible de notifier les corrections (event ou créateur introuvable) : {}", eventId);
                 return;
             }
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
             Context context = buildBaseContext();
             context.setVariable("event", event);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyChangesRequested(),
+                    "Le CGE a demandé des corrections sur votre événement {evenement} avant de pouvoir le valider.",
+                    vars));
             String htmlContent = templateEngine.process("email/changes-requested", context);
-            sendEmail(event.getCreatorEmail(), "Corrections demandées : " + event.getTitle(), htmlContent);
+            String subject = resolveSubject(orgConfig.getSubjectChangesRequested(),
+                    "Corrections demandées : {evenement}", vars);
+            sendEmail(event.getCreatorEmail(), subject, htmlContent);
             log.info("✅ Notification de corrections envoyée à {}", event.getCreatorEmail());
         } catch (Exception e) {
             log.error("❌ Erreur notification corrections eventId={} : {}", eventId, e.getMessage());
@@ -351,10 +430,17 @@ public class EmailServiceImpl implements EmailService {
                 log.warn("⚠ Aucun destinataire CGE/ADMIN trouvé pour la re-soumission");
                 return;
             }
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
             Context context = buildBaseContext();
             context.setVariable("event", event);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyAmendmentsCorrected(),
+                    "Le créateur a apporté les corrections demandées. L'événement est de nouveau en attente de votre validation.",
+                    vars));
             String htmlContent = templateEngine.process("email/amendments-corrected", context);
-            String subject = "Corrections apportées : " + event.getTitle();
+            String subject = resolveSubject(orgConfig.getSubjectAmendmentsCorrected(),
+                    "Corrections apportées : {evenement}", vars);
             for (String to : recipients) {
                 sendEmail(to, subject, htmlContent);
             }
@@ -377,10 +463,17 @@ public class EmailServiceImpl implements EmailService {
                 log.warn("⚠ Impossible de notifier la délégation (event ou délégué introuvable) : {}", eventId);
                 return;
             }
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
             Context context = buildBaseContext();
             context.setVariable("event", event);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyDelegation(),
+                    "Vous avez été désigné(e) pour représenter le CGE à l'événement suivant :", vars));
             String htmlContent = templateEngine.process("email/delegation", context);
-            sendEmail(event.getDelegueEmail(), "Délégation de participation : " + event.getTitle(), htmlContent);
+            String subject = resolveSubject(orgConfig.getSubjectDelegation(),
+                    "Délégation : {evenement}", vars);
+            sendEmail(event.getDelegueEmail(), subject, htmlContent);
             log.info("✅ Notification de délégation envoyée à {}", event.getDelegueEmail());
         } catch (Exception e) {
             log.error("❌ Erreur notification délégation eventId={} : {}", eventId, e.getMessage());
@@ -407,11 +500,17 @@ public class EmailServiceImpl implements EmailService {
                 return;
             }
 
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
             Context context = buildBaseContext();
             context.setVariable("event", event);
             context.setVariable("reason", reason);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyCancellation(),
+                    "L'événement {evenement} a été annulé.", vars));
             String htmlContent = templateEngine.process("email/cancellation", context);
-            String subject = "Annulation : " + event.getTitle();
+            String subject = resolveSubject(orgConfig.getSubjectCancellation(),
+                    "Annulation : {evenement}", vars);
 
             for (Participant participant : participants) {
                 sendEmail(participant.getEmail(), subject, htmlContent);
@@ -443,10 +542,16 @@ public class EmailServiceImpl implements EmailService {
                 return;
             }
 
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
             Context context = buildBaseContext();
             context.setVariable("event", event);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyPostponement(),
+                    "L'événement {evenement} a été reporté à une nouvelle date.", vars));
             String htmlContent = templateEngine.process("email/postponement", context);
-            String subject = "Report : " + event.getTitle();
+            String subject = resolveSubject(orgConfig.getSubjectPostponement(),
+                    "Report : {evenement}", vars);
 
             for (Participant participant : participants) {
                 sendEmail(participant.getEmail(), subject, htmlContent);
