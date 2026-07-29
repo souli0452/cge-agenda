@@ -28,7 +28,7 @@ public class OrgConfigDto {
 
     private String subjectInvitation;
     private String subjectValidationRequest;
-    private String subjectValidated;
+    private String subjectNewDocument;
     private String subjectRejected;
     private String subjectChangesRequested;
     private String subjectAmendmentsCorrected;
@@ -37,6 +37,18 @@ public class OrgConfigDto {
     private String subjectEventUpdate;
     private String subjectReminder;
     private String subjectDelegation;
+
+    private String bodyInvitation;
+    private String bodyValidationRequest;
+    private String bodyNewDocument;
+    private String bodyRejected;
+    private String bodyChangesRequested;
+    private String bodyAmendmentsCorrected;
+    private String bodyCancellation;
+    private String bodyPostponement;
+    private String bodyEventUpdate;
+    private String bodyReminder;
+    private String bodyDelegation;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd' 'HH:mm:ss")
     private LocalDateTime updatedAt;

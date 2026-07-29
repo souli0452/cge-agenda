@@ -23,7 +23,7 @@ public class OrgConfigServiceImpl implements OrgConfigService {
     static {
         TEMPLATE_LABELS.put("invitation", "Invitation à un événement");
         TEMPLATE_LABELS.put("validation-request", "Demande de validation");
-        TEMPLATE_LABELS.put("validated", "Événement validé");
+        TEMPLATE_LABELS.put("new-document", "Nouveau document ajouté");
         TEMPLATE_LABELS.put("rejected", "Événement rejeté");
         TEMPLATE_LABELS.put("changes-requested", "Corrections demandées");
         TEMPLATE_LABELS.put("amendments-corrected", "Corrections apportées");
@@ -53,7 +53,7 @@ public class OrgConfigServiceImpl implements OrgConfigService {
         config.setSiteWeb(dto.getSiteWeb());
         config.setSubjectInvitation(dto.getSubjectInvitation());
         config.setSubjectValidationRequest(dto.getSubjectValidationRequest());
-        config.setSubjectValidated(dto.getSubjectValidated());
+        config.setSubjectNewDocument(dto.getSubjectNewDocument());
         config.setSubjectRejected(dto.getSubjectRejected());
         config.setSubjectChangesRequested(dto.getSubjectChangesRequested());
         config.setSubjectAmendmentsCorrected(dto.getSubjectAmendmentsCorrected());
@@ -62,6 +62,17 @@ public class OrgConfigServiceImpl implements OrgConfigService {
         config.setSubjectEventUpdate(dto.getSubjectEventUpdate());
         config.setSubjectReminder(dto.getSubjectReminder());
         config.setSubjectDelegation(dto.getSubjectDelegation());
+        config.setBodyInvitation(dto.getBodyInvitation());
+        config.setBodyValidationRequest(dto.getBodyValidationRequest());
+        config.setBodyNewDocument(dto.getBodyNewDocument());
+        config.setBodyRejected(dto.getBodyRejected());
+        config.setBodyChangesRequested(dto.getBodyChangesRequested());
+        config.setBodyAmendmentsCorrected(dto.getBodyAmendmentsCorrected());
+        config.setBodyCancellation(dto.getBodyCancellation());
+        config.setBodyPostponement(dto.getBodyPostponement());
+        config.setBodyEventUpdate(dto.getBodyEventUpdate());
+        config.setBodyReminder(dto.getBodyReminder());
+        config.setBodyDelegation(dto.getBodyDelegation());
         return toDto(orgConfigRepository.save(config));
     }
 
@@ -94,7 +105,7 @@ public class OrgConfigServiceImpl implements OrgConfigService {
         return switch (templateKey) {
             case "invitation" -> config.getSubjectInvitation();
             case "validation-request" -> config.getSubjectValidationRequest();
-            case "validated" -> config.getSubjectValidated();
+            case "new-document" -> config.getSubjectNewDocument();
             case "rejected" -> config.getSubjectRejected();
             case "changes-requested" -> config.getSubjectChangesRequested();
             case "amendments-corrected" -> config.getSubjectAmendmentsCorrected();
@@ -104,6 +115,23 @@ public class OrgConfigServiceImpl implements OrgConfigService {
             case "reminder" -> config.getSubjectReminder();
             case "delegation" -> config.getSubjectDelegation();
             default -> TEMPLATE_LABELS.get(templateKey);
+        };
+    }
+
+    private String bodyFor(OrgConfig config, String templateKey) {
+        return switch (templateKey) {
+            case "invitation" -> config.getBodyInvitation();
+            case "validation-request" -> config.getBodyValidationRequest();
+            case "new-document" -> config.getBodyNewDocument();
+            case "rejected" -> config.getBodyRejected();
+            case "changes-requested" -> config.getBodyChangesRequested();
+            case "amendments-corrected" -> config.getBodyAmendmentsCorrected();
+            case "cancellation" -> config.getBodyCancellation();
+            case "postponement" -> config.getBodyPostponement();
+            case "event-update" -> config.getBodyEventUpdate();
+            case "reminder" -> config.getBodyReminder();
+            case "delegation" -> config.getBodyDelegation();
+            default -> "";
         };
     }
 
@@ -124,7 +152,7 @@ public class OrgConfigServiceImpl implements OrgConfigService {
                                 .couleurPrimaire("#009640")
                                 .subjectInvitation("Invitation : {evenement}")
                                 .subjectValidationRequest("Demande de validation : {evenement}")
-                                .subjectValidated("Événement validé : {evenement}")
+                                .subjectNewDocument("Nouveau document : {evenement}")
                                 .subjectRejected("Événement rejeté : {evenement}")
                                 .subjectChangesRequested("Corrections demandées : {evenement}")
                                 .subjectAmendmentsCorrected("Corrections apportées : {evenement}")
@@ -133,6 +161,17 @@ public class OrgConfigServiceImpl implements OrgConfigService {
                                 .subjectEventUpdate("Mise à jour : {evenement}")
                                 .subjectReminder("Rappel : {evenement}")
                                 .subjectDelegation("Délégation : {evenement}")
+                                .bodyInvitation("Vous avez été inscrit(e) à l'événement {evenement}. Veuillez en prendre note dans votre agenda.")
+                                .bodyValidationRequest("Un événement a été soumis et attend votre validation.")
+                                .bodyNewDocument("Un nouveau document a été ajouté à l'événement {evenement}. Vous pouvez le consulter et le télécharger dès maintenant.")
+                                .bodyRejected("Votre événement {evenement} a été rejeté. Le motif est détaillé ci-dessous.")
+                                .bodyChangesRequested("Le CGE a demandé des corrections sur votre événement {evenement} avant de pouvoir le valider.")
+                                .bodyAmendmentsCorrected("Le créateur a apporté les corrections demandées. L'événement est de nouveau en attente de votre validation.")
+                                .bodyCancellation("L'événement {evenement} a été annulé.")
+                                .bodyPostponement("L'événement {evenement} a été reporté à une nouvelle date.")
+                                .bodyEventUpdate("L'événement {evenement} a été modifié. Veuillez consulter les nouvelles informations ci-dessous et mettre à jour votre agenda.")
+                                .bodyReminder("Rappel : l'événement {evenement} approche.")
+                                .bodyDelegation("Vous avez été désigné(e) pour représenter le CGE à l'événement suivant :")
                                 .build()
                 ));
     }
@@ -149,7 +188,7 @@ public class OrgConfigServiceImpl implements OrgConfigService {
                 .siteWeb(c.getSiteWeb())
                 .subjectInvitation(c.getSubjectInvitation())
                 .subjectValidationRequest(c.getSubjectValidationRequest())
-                .subjectValidated(c.getSubjectValidated())
+                .subjectNewDocument(c.getSubjectNewDocument())
                 .subjectRejected(c.getSubjectRejected())
                 .subjectChangesRequested(c.getSubjectChangesRequested())
                 .subjectAmendmentsCorrected(c.getSubjectAmendmentsCorrected())
@@ -158,6 +197,17 @@ public class OrgConfigServiceImpl implements OrgConfigService {
                 .subjectEventUpdate(c.getSubjectEventUpdate())
                 .subjectReminder(c.getSubjectReminder())
                 .subjectDelegation(c.getSubjectDelegation())
+                .bodyInvitation(c.getBodyInvitation())
+                .bodyValidationRequest(c.getBodyValidationRequest())
+                .bodyNewDocument(c.getBodyNewDocument())
+                .bodyRejected(c.getBodyRejected())
+                .bodyChangesRequested(c.getBodyChangesRequested())
+                .bodyAmendmentsCorrected(c.getBodyAmendmentsCorrected())
+                .bodyCancellation(c.getBodyCancellation())
+                .bodyPostponement(c.getBodyPostponement())
+                .bodyEventUpdate(c.getBodyEventUpdate())
+                .bodyReminder(c.getBodyReminder())
+                .bodyDelegation(c.getBodyDelegation())
                 .updatedAt(c.getUpdatedAt())
                 .build();
     }
