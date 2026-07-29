@@ -46,8 +46,8 @@ public class OrgConfig extends AuditEntity {
     @Column(name = "subject_validation_request")
     private String subjectValidationRequest;
 
-    @Column(name = "subject_validated")
-    private String subjectValidated;
+    @Column(name = "subject_new_document")
+    private String subjectNewDocument;
 
     @Column(name = "subject_rejected")
     private String subjectRejected;
@@ -72,4 +72,37 @@ public class OrgConfig extends AuditEntity {
 
     @Column(name = "subject_delegation")
     private String subjectDelegation;
+
+    @Column(name = "body_invitation", columnDefinition = "TEXT")
+    private String bodyInvitation;
+
+    @Column(name = "body_validation_request", columnDefinition = "TEXT")
+    private String bodyValidationRequest;
+
+    @Column(name = "body_new_document", columnDefinition = "TEXT")
+    private String bodyNewDocument;
+
+    @Column(name = "body_rejected", columnDefinition = "TEXT")
+    private String bodyRejected;
+
+    @Column(name = "body_changes_requested", columnDefinition = "TEXT")
+    private String bodyChangesRequested;
+
+    @Column(name = "body_amendments_corrected", columnDefinition = "TEXT")
+    private String bodyAmendmentsCorrected;
+
+    @Column(name = "body_cancellation", columnDefinition = "TEXT")
+    private String bodyCancellation;
+
+    @Column(name = "body_postponement", columnDefinition = "TEXT")
+    private String bodyPostponement;
+
+    @Column(name = "body_event_update", columnDefinition = "TEXT")
+    private String bodyEventUpdate;
+
+    @Column(name = "body_reminder", columnDefinition = "TEXT")
+    private String bodyReminder;
+
+    @Column(name = "body_delegation", columnDefinition = "TEXT")
+    private String bodyDelegation;
 }
