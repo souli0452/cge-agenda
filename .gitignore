@@ -43,6 +43,7 @@ build/
 # Superpowers (outillage de session, pas du code)
 .superpowers/
 docs/superpowers/
+.worktrees/
 
 backups/
 
