@@ -163,11 +163,7 @@
 
     <div class="badge">
         <div class="greeting">Nouveau document disponible 📂</div>
-        <div class="message">
-            Un nouveau document a été ajouté à l'événement
-            <span class="event-name" th:text="${event.title}"></span>.
-            Vous pouvez le consulter et le télécharger dès maintenant.
-        </div>
+        <div class="message" style="white-space:pre-line;" th:text="${customMessage}"></div>
     </div>
 
     <div class="content">

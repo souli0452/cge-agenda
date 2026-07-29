@@ -30,9 +30,7 @@
         <p>Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
     </div>
     <div class="content">
-        <p style="margin-bottom:20px;">
-            Le créateur a apporté les corrections demandées. L'événement est de nouveau en attente de votre validation.
-        </p>
+        <p style="margin-bottom:20px;white-space:pre-line;" th:text="${customMessage}"></p>
         <table class="info-grid">
             <tr><td>Titre</td><td><strong th:text="${event.title}"></strong></td></tr>
             <tr><td>Créé par</td><td th:text="${event.creatorEmail}"></td></tr>

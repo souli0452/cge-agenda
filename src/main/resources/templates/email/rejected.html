@@ -32,6 +32,7 @@
         <p>Autorité Supérieure de Contrôle d'État et de Lutte contre la Corruption</p>
     </div>
     <div class="content">
+        <p style="margin-bottom:20px;font-size:14px;color:#555;white-space:pre-line;" th:text="${customMessage}"></p>
         <table class="info-grid">
             <tr><td>Titre</td><td><strong th:text="${event.title}"></strong></td></tr>
             <tr><td>Date de début</td><td th:text="${#temporals.format(event.startDate, 'dd MMMM yyyy', #locale)}"></td></tr>

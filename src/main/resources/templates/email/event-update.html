@@ -140,11 +140,7 @@
 
     <div class="badge">
         <div class="greeting">Avis de modification 📢</div>
-        <div class="message">
-            L'événement <span class="event-name" th:text="${event.title}"></span>
-            a été modifié. Veuillez consulter les nouvelles informations ci-dessous
-            et mettre à jour votre agenda.
-        </div>
+        <div class="message" style="white-space:pre-line;" th:text="${customMessage}"></div>
     </div>
 
     <div class="content">

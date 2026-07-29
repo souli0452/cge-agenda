@@ -191,11 +191,7 @@
         <div class="greeting">
             Bonjour <span th:text="${participant.firstName + ' ' + participant.lastName}"></span> 👋
         </div>
-        <div class="message">
-            Vous avez été inscrit(e) à l'événement
-            <span class="event-name" th:text="${event.title}"></span>.
-            Veuillez en prendre note dans votre agenda.
-        </div>
+        <div class="message" style="white-space:pre-line;" th:text="${customMessage}"></div>
     </div>
 
     <div class="content">
