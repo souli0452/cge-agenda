@@ -1,16 +1,25 @@
 package gov.bf.ascelc.cge_agenda.service.impl;
 
 import gov.bf.ascelc.cge_agenda.dto.OrgConfigDto;
+import gov.bf.ascelc.cge_agenda.entities.Event;
 import gov.bf.ascelc.cge_agenda.entities.OrgConfig;
+import gov.bf.ascelc.cge_agenda.entities.Participant;
+import gov.bf.ascelc.cge_agenda.enums.EventType;
 import gov.bf.ascelc.cge_agenda.repository.OrgConfigRepository;
 import gov.bf.ascelc.cge_agenda.service.OrgConfigService;
+import gov.bf.ascelc.cge_agenda.utils.EmailTemplateVariables;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.thymeleaf.context.Context;
+import org.thymeleaf.spring6.SpringTemplateEngine;
 
+import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -18,6 +27,7 @@ import java.util.Map;
 public class OrgConfigServiceImpl implements OrgConfigService {
 
     private final OrgConfigRepository orgConfigRepository;
+    private final SpringTemplateEngine templateEngine;
 
     private static final Map<String, String> TEMPLATE_LABELS = new LinkedHashMap<>();
     static {
@@ -83,21 +93,50 @@ public class OrgConfigServiceImpl implements OrgConfigService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Modèle d'email inconnu : " + templateKey);
         }
         OrgConfig config = findOrCreateConfig();
-        String subject = subjectFor(config, templateKey);
-        String primary = config.getCouleurPrimaire() != null ? config.getCouleurPrimaire() : "#009640";
-        String orgName = config.getNomOrganisation() != null ? config.getNomOrganisation() : "ASCE-LC";
 
-        return "<div style=\"font-family:Arial,sans-serif;max-width:560px;margin:0 auto;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden\">"
-                + "<div style=\"background:" + primary + ";color:#fff;padding:20px 24px\">"
-                + "<strong style=\"font-size:18px\">" + orgName + "</strong>"
+        Event sampleEvent = Event.builder()
+                .title("Réunion de démonstration")
+                .type(EventType.REUNION)
+                .startDate(LocalDate.now().plusDays(7))
+                .endDate(LocalDate.now().plusDays(7))
+                .ville("Ouagadougou")
+                .pays("Burkina Faso")
+                .rejectionReason("Motif d'exemple : budget non détaillé")
+                .changeSuggestions("Exemple : préciser le lieu exact de la réunion")
+                .build();
+        Participant sampleParticipant = Participant.builder()
+                .firstName("Jean").lastName("Dupont").email("jean.dupont@example.com")
+                .build();
+
+        Map<String, String> vars = new HashMap<>();
+        vars.put("evenement", sampleEvent.getTitle());
+        vars.put("participant", sampleParticipant.getFirstName() + " " + sampleParticipant.getLastName());
+        vars.put("date_debut", sampleEvent.getStartDate().toString());
+        vars.put("date_fin", sampleEvent.getEndDate().toString());
+        vars.put("lieu", sampleEvent.getVille());
+
+        String subject = EmailTemplateVariables.substitute(subjectFor(config, templateKey), vars);
+        String customMessage = EmailTemplateVariables.substitute(bodyFor(config, templateKey), vars);
+
+        Context context = new Context(Locale.FRENCH);
+        context.setVariable("baseUrl", "https://agenda.asce-lc.bf");
+        context.setVariable("apiUrl", "https://agenda.asce-lc.bf");
+        context.setVariable("event", sampleEvent);
+        context.setVariable("participant", sampleParticipant);
+        context.setVariable("file", gov.bf.ascelc.cge_agenda.entities.File.builder()
+                .fileName("exemple.pdf").build());
+        context.setVariable("heureDebut", "09:00");
+        context.setVariable("heureFin", "17:00");
+        context.setVariable("customMessage", customMessage);
+
+        String html = templateEngine.process("email/" + templateKey, context);
+
+        return "<div style=\"padding:12px;background:#f0f4f0;\">"
+                + "<div style=\"max-width:640px;margin:0 auto 12px;background:#fff3cd;border:1px solid #ffc107;"
+                + "border-radius:6px;padding:10px 16px;font-family:Arial,sans-serif;font-size:13px;color:#664d03;\">"
+                + "Aperçu avec des données d'exemple — Objet : <strong>" + escapeHtml(subject) + "</strong>"
                 + "</div>"
-                + "<div style=\"padding:24px\">"
-                + "<h2 style=\"margin-top:0;color:" + primary + "\">" + TEMPLATE_LABELS.get(templateKey) + "</h2>"
-                + "<p style=\"color:#555;font-size:14px\">Objet : <strong>" + escapeHtml(subject) + "</strong></p>"
-                + "<hr style=\"border:none;border-top:1px solid #eee;margin:16px 0\">"
-                + "<p style=\"color:#333\">Ceci est un aperçu illustratif du modèle « " + TEMPLATE_LABELS.get(templateKey)
-                + " ». Le contenu réel de l'email inclura les informations de l'événement concerné.</p>"
-                + "</div>"
+                + html
                 + "</div>";
     }
 
