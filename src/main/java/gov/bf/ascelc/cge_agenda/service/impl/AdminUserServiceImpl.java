@@ -62,6 +62,12 @@ public class AdminUserServiceImpl implements AdminUserService {
         user.setEnabled(payload.isEnabled());
         user.setEmailVerified(true);
 
+        boolean hasPassword = payload.getPassword() != null && !payload.getPassword().isBlank();
+        // Le nom/prénom sont déjà renseignés par l'admin : on ne force que le
+        // changement du mot de passe temporaire au premier login, pas les actions
+        // par défaut du realm (qui incluent "Update Profile" sinon).
+        user.setRequiredActions(hasPassword ? List.of("UPDATE_PASSWORD") : List.of());
+
         Response response = realm().users().create(user);
         if (response.getStatus() != 201) {
             throw new ResponseStatusException(
@@ -71,7 +77,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         }
         String userId = CreatedResponseUtil.getCreatedId(response);
 
-        if (payload.getPassword() != null && !payload.getPassword().isBlank()) {
+        if (hasPassword) {
             setPassword(userId, payload.getPassword(), true);
         }
         if (payload.getRole() != null && !payload.getRole().isBlank()) {
