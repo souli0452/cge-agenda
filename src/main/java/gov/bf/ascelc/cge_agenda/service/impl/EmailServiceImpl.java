@@ -194,8 +194,9 @@ public class EmailServiceImpl implements EmailService {
                     "Rappel : l'événement {evenement} approche.", vars));
 
             String htmlContent = templateEngine.process("email/reminder", context);
+            String subjectFallback = "Rappel J-" + daysUntil + " : {evenement}";
             String subject     = resolveSubject(orgConfig.getSubjectReminder(),
-                    "Rappel : {evenement}", vars);
+                    subjectFallback, vars);
 
             for (Participant participant : participants) {
                 sendEmail(participant.getEmail(), subject, htmlContent);
@@ -246,7 +247,7 @@ public class EmailServiceImpl implements EmailService {
 
             String htmlContent = templateEngine.process("email/event-update", context);
             String subject     = resolveSubject(orgConfig.getSubjectEventUpdate(),
-                    "Mise à jour : {evenement}", vars);
+                    "Modification : {evenement}", vars);
 
             for (Participant participant : participants) {
                 sendEmail(participant.getEmail(), subject, htmlContent);
@@ -472,7 +473,7 @@ public class EmailServiceImpl implements EmailService {
                     "Vous avez été désigné(e) pour représenter le CGE à l'événement suivant :", vars));
             String htmlContent = templateEngine.process("email/delegation", context);
             String subject = resolveSubject(orgConfig.getSubjectDelegation(),
-                    "Délégation : {evenement}", vars);
+                    "Délégation de participation : {evenement}", vars);
             sendEmail(event.getDelegueEmail(), subject, htmlContent);
             log.info("✅ Notification de délégation envoyée à {}", event.getDelegueEmail());
         } catch (Exception e) {
