@@ -55,7 +55,12 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     @Query("SELECT e.id FROM Event e WHERE e.deleted = true ORDER BY e.updatedAt DESC")
     List<UUID> findDeletedIdsOrderedByUpdatedAt();
 
-    @Query("SELECT DISTINCT e FROM Event e " +
+    // Pas de DISTINCT ici : avec plusieurs LEFT JOIN FETCH sur des collections,
+    // Hibernate ajoute un ORDER BY implicite pour assembler les collections,
+    // ce que PostgreSQL refuse en présence de DISTINCT (l'expression du ORDER BY
+    // n'apparaît pas dans la liste SELECT). Le doublonnage issu du produit
+    // cartésien des jointures est de toute façon éliminé ci-dessous via la Map.
+    @Query("SELECT e FROM Event e " +
             "LEFT JOIN FETCH e.participantEvents pe " +
             "LEFT JOIN FETCH pe.participant " +
             "LEFT JOIN FETCH e.schedules " +
