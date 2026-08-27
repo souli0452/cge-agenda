@@ -694,6 +694,8 @@ public class EventServiceImpl implements EventService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
 
+        assertNotOwnEvent(event);
+
         if (event.getStatus() != EventStatus.EN_ATTENTE_VALIDATION) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Seul un événement en attente de validation peut être validé");
@@ -730,6 +732,8 @@ public class EventServiceImpl implements EventService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
 
+        assertNotOwnEvent(event);
+
         if (event.getStatus() != EventStatus.EN_ATTENTE_VALIDATION
                 && event.getStatus() != EventStatus.A_CORRIGER) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -760,6 +764,8 @@ public class EventServiceImpl implements EventService {
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+
+        assertNotOwnEvent(event);
 
         if (event.getStatus() != EventStatus.EN_ATTENTE_VALIDATION) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -879,6 +885,13 @@ public class EventServiceImpl implements EventService {
     private boolean isCreator(Event event) {
         String email = currentUserEmail();
         return email != null && email.equalsIgnoreCase(event.getCreatorEmail());
+    }
+
+    private void assertNotOwnEvent(Event event) {
+        if (isCreator(event)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Vous ne pouvez pas valider, rejeter ou demander des modifications sur votre propre événement");
+        }
     }
 
     private String currentUserEmail() {
