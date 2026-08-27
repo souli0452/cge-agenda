@@ -94,6 +94,15 @@ public class ParticipantController {
     }
 
     /**
+     * Autocomplétion des participants par nom/prénom (saisie assistée)
+     */
+    @GetMapping(AUTOCOMPLETE_PARTICIPANTS)
+    public ResponseEntity<List<ParticipantDto>> autocomplete(@RequestParam String q) {
+        List<ParticipantDto> participants = participantService.searchByName(q);
+        return ResponseEntity.ok(participants);
+    }
+
+    /**
      * Liste paginée, filtrable et triable des participants (hors corbeille)
      */
     @GetMapping(GET_PARTICIPANTS_PAGED)

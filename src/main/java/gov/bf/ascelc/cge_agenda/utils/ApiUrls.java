@@ -65,6 +65,7 @@ public class ApiUrls {
     public static final String GET_PARTICIPANT_BY_ID = "/{id}";
     public static final String GET_ALL_PARTICIPANT = "/all";
     public static final String SEARCH_PARTICIPANTS = "/search";
+    public static final String AUTOCOMPLETE_PARTICIPANTS = "/autocomplete";
     public static final String GET_PARTICIPANTS_BY_TYPE = "/type/{type}";
     public static final String GET_PARTICIPANTS_PAGED = "/paged";
     public static final String GET_PARTICIPANT_CORBEILLE = "/corbeille";
