@@ -41,6 +41,15 @@ public class Event extends AuditEntity {
     @Column(name = "ville")
     private String ville;
 
+    @Column(name = "lieu_type", length = 30)
+    private String lieuType;
+
+    @Column(name = "salle", length = 150)
+    private String salle;
+
+    @Column(name = "nom_lieu", length = 200)
+    private String nomLieu;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false,length = 50)
     private EventStatus status;
