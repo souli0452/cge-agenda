@@ -9,9 +9,13 @@ import gov.bf.ascelc.cge_agenda.enums.EventType;
 import gov.bf.ascelc.cge_agenda.mapper.EventMapper;
 import gov.bf.ascelc.cge_agenda.repository.EventRepository;
 import gov.bf.ascelc.cge_agenda.repository.ParticipantEventRepository;
+import gov.bf.ascelc.cge_agenda.service.EspaceService;
 import gov.bf.ascelc.cge_agenda.service.StatsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,33 +33,75 @@ public class StatsServiceImpl implements StatsService {
     private final EventRepository eventRepository;
     private final ParticipantEventRepository participantEventRepository;
     private final EventMapper eventMapper;
+    private final EspaceService espaceService;
+
+    /**
+     * Espaces accessibles à l'utilisateur courant (null = ADMIN, vue transverse). Les
+     * statistiques d'un chef ne portent que sur son propre espace — jamais mélangées
+     * avec celles des autres chefs.
+     */
+    private List<UUID> espacesAccessiblesCourantOuNull() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        if (isAdmin) {
+            return null;
+        }
+        String email = null;
+        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+            email = jwt.getClaim("email");
+            if (email == null) {
+                email = jwt.getClaim("preferred_username");
+            }
+        }
+        return espaceService.espacesAccessibles(email);
+    }
+
+    private boolean accessible(Event event, List<UUID> espaceIds) {
+        if (espaceIds == null) {
+            return true;
+        }
+        return event.getEspace() != null && espaceIds.contains(event.getEspace().getId());
+    }
+
+    private List<Event> filterAccessible(List<Event> events, List<UUID> espaceIds) {
+        if (espaceIds == null) {
+            return events;
+        }
+        return events.stream().filter(e -> accessible(e, espaceIds)).toList();
+    }
 
     @Override
     public DashboardStatsDto getDashboardStats() {
         log.info("📊 Génération des statistiques du dashboard");
 
-        long totalEvents = eventRepository.count();
-        long uniqueParticipants = participantEventRepository.countUniqueParticipants();
-        long totalInscriptions = participantEventRepository.count();
-
-        // Agrégations par statut
-        Map<EventStatus, Long> eventsByStatus = eventRepository.countByStatus().stream()
-                .collect(Collectors.toMap(
-                        entry -> (EventStatus) entry[0],
-                        entry -> ((Number) entry[1]).longValue()
-                ));
-
-        // Agrégations par type
-        Map<EventType, Long> eventsByType = eventRepository.countByType().stream()
-                .collect(Collectors.toMap(
-                        entry -> (EventType) entry[0],
-                        entry -> ((Number) entry[1]).longValue()
-                ));
+        List<UUID> espaceIds = espacesAccessiblesCourantOuNull();
+        List<Event> allEvents = filterAccessible(eventRepository.findAll(), espaceIds);
+        long totalEvents = allEvents.size();
 
         // Événements à venir (7 prochains jours)
         LocalDate today = LocalDate.now();
         LocalDate weekFromNow = today.plusDays(7);
-        List<Event> upcomingEvents = eventRepository.findUpcomingEvents(today, weekFromNow);
+        List<Event> upcomingEvents = filterAccessible(
+                eventRepository.findUpcomingEvents(today, weekFromNow), espaceIds);
+
+        // Agrégations par statut et par type
+        Map<EventStatus, Long> eventsByStatus = allEvents.stream()
+                .collect(Collectors.groupingBy(Event::getStatus, Collectors.counting()));
+        Map<EventType, Long> eventsByType = allEvents.stream()
+                .collect(Collectors.groupingBy(Event::getType, Collectors.counting()));
+
+        // Participants/inscriptions scopés aux mêmes événements accessibles
+        long uniqueParticipants;
+        long totalInscriptions;
+        if (espaceIds == null) {
+            uniqueParticipants = participantEventRepository.countUniqueParticipants();
+            totalInscriptions = participantEventRepository.count();
+        } else {
+            List<UUID> eventIds = allEvents.stream().map(Event::getId).toList();
+            uniqueParticipants = eventIds.isEmpty() ? 0 : participantEventRepository.countUniqueParticipantsByEventIds(eventIds);
+            totalInscriptions = eventIds.isEmpty() ? 0 : participantEventRepository.countByEventIdIn(eventIds);
+        }
 
         // Top 3 types
         List<TypeStatsDto> topTypes = eventsByType.entrySet().stream()
@@ -91,7 +137,8 @@ public class StatsServiceImpl implements StatsService {
         LocalDate startOfMonth = ym.atDay(1);
         LocalDate endOfMonth = ym.atEndOfMonth();
 
-        List<Event> monthEvents = eventRepository.findByMonth(startOfMonth, endOfMonth);
+        List<Event> monthEvents = filterAccessible(
+                eventRepository.findByMonth(startOfMonth, endOfMonth), espacesAccessiblesCourantOuNull());
         int totalEvents = monthEvents.size();
 
         Set<UUID> eventIds = monthEvents.stream().map(Event::getId).collect(Collectors.toSet());
@@ -121,7 +168,8 @@ public class StatsServiceImpl implements StatsService {
     public Map<String, Map<String, Long>> getEventsByStatusAndMonth(int year) {
         log.info("📆 Chargement des événements par statut pour l'année {}", year);
 
-        List<Event> events = eventRepository.findByYear(year);
+        List<Event> events = filterAccessible(
+                eventRepository.findByYear(year), espacesAccessiblesCourantOuNull());
         String[] months = {"Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                 "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"};
 

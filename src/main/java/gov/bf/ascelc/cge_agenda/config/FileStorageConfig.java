@@ -17,6 +17,9 @@ public class FileStorageConfig {
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
 
+    @Value("${app.backup.dir:backups}")
+    private String backupDir;
+
     /**
      * Crée automatiquement les dossiers au démarrage de l'application
      */
@@ -42,8 +45,21 @@ public class FileStorageConfig {
                     log.info("Dossier existant : {}", eventsPath.toAbsolutePath());
                 }
 
+                // Créer backups/ et backups/corbeille/
+                Path backupPath = Paths.get(backupDir);
+                if (!Files.exists(backupPath)) {
+                    Files.createDirectories(backupPath);
+                    log.info("Dossier créé : {}", backupPath.toAbsolutePath());
+                }
+                Path backupCorbeillePath = backupPath.resolve("corbeille");
+                if (!Files.exists(backupCorbeillePath)) {
+                    Files.createDirectories(backupCorbeillePath);
+                    log.info("Dossier créé : {}", backupCorbeillePath.toAbsolutePath());
+                }
+
                 log.info("Système de stockage initialisé avec succès !");
                 log.info("Dossier d'upload : {}", uploadPath.toAbsolutePath());
+                log.info("Dossier de sauvegardes : {}", backupPath.toAbsolutePath());
 
             } catch (Exception e) {
                 log.error("ERREUR lors de l'initialisation du stockage : {}", e.getMessage());

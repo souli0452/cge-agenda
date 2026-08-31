@@ -6,9 +6,11 @@ import gov.bf.ascelc.cge_agenda.enums.EventStatus;
 import gov.bf.ascelc.cge_agenda.enums.EventType;
 import gov.bf.ascelc.cge_agenda.service.EventService;
 import gov.bf.ascelc.cge_agenda.service.PdfService;
+import gov.bf.ascelc.cge_agenda.utils.ICalendarUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -32,6 +34,9 @@ public class EventController {
 
     private final EventService eventService;
     private final PdfService pdfService;
+
+    @Value("${app.base-url}")
+    private String baseUrl;
 
     // ==========================================
     // GESTION DES ÉVÉNEMENTS
@@ -75,6 +80,26 @@ public class EventController {
     @DeleteMapping(DELETE_EVENT)
     public ResponseEntity<Void> deleteById(@PathVariable UUID id) {
         eventService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ==========================================
+    // CORBEILLE
+    // ==========================================
+
+    @GetMapping(GET_EVENT_CORBEILLE)
+    public ResponseEntity<List<EventDto>> getCorbeille() {
+        return ResponseEntity.ok(eventService.getCorbeille());
+    }
+
+    @PatchMapping(RESTORE_EVENT)
+    public ResponseEntity<EventDto> restoreEvent(@PathVariable UUID id) {
+        return ResponseEntity.ok(eventService.restoreEvent(id));
+    }
+
+    @DeleteMapping(DELETE_EVENT_PERMANENT)
+    public ResponseEntity<Void> deleteEventPermanently(@PathVariable UUID id) {
+        eventService.deleteEventPermanently(id);
         return ResponseEntity.noContent().build();
     }
 
@@ -217,6 +242,24 @@ public class EventController {
         return ResponseEntity.ok().headers(headers).body(pdfFile);
     }
 
+    // ==========================================
+    // EXPORT CALENDRIER (.ics)
+    // ==========================================
+
+    @GetMapping("/ical/{id}")
+    public ResponseEntity<byte[]> exportIcs(@PathVariable UUID id) {
+        // getEventById applique déjà le contrôle de cloisonnement (404 si l'événement
+        // n'appartient pas à un espace accessible à l'appelant).
+        EventDto event = eventService.getEventById(id);
+        byte[] ics = ICalendarUtils.buildIcs(event, baseUrl).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("text/calendar;charset=UTF-8"));
+        headers.setContentDispositionFormData("attachment", "evenement_" + id + ".ics");
+
+        return ResponseEntity.ok().headers(headers).body(ics);
+    }
+
     @GetMapping("/compte-rendu/{id}")
     public ResponseEntity<byte[]> generateMeetingReport(@PathVariable UUID id) {
         log.info("Génération compte-rendu : {}", id);
@@ -245,5 +288,79 @@ public class EventController {
     ) {
         eventService.updateStatusOnly(id, status);
         return ResponseEntity.noContent().build();
+    }
+
+    // ==========================================
+    // WORKFLOW DE VALIDATION CGE
+    // ==========================================
+
+    @PatchMapping(SUBMIT_EVENT)
+    public ResponseEntity<EventDto> submitDraft(@PathVariable UUID id) {
+        return ResponseEntity.ok(eventService.submitDraft(id));
+    }
+
+    @PatchMapping(VALIDATE_EVENT)
+    public ResponseEntity<EventDto> validateEvent(
+            @PathVariable UUID id,
+            @RequestParam(required = false, defaultValue = "") String comment
+    ) {
+        return ResponseEntity.ok(eventService.validateEvent(id, comment));
+    }
+
+    @PatchMapping(REJECT_EVENT)
+    public ResponseEntity<EventDto> rejectEvent(
+            @PathVariable UUID id,
+            @RequestParam String reason
+    ) {
+        return ResponseEntity.ok(eventService.rejectEvent(id, reason));
+    }
+
+    @PatchMapping(REQUEST_CHANGES_EVENT)
+    public ResponseEntity<EventDto> requestChanges(
+            @PathVariable UUID id,
+            @RequestParam String suggestions
+    ) {
+        return ResponseEntity.ok(eventService.requestChanges(id, suggestions));
+    }
+
+    @PatchMapping(DELEGATE_EVENT)
+    public ResponseEntity<EventDto> delegateParticipation(
+            @PathVariable UUID id,
+            @RequestParam String delegueNom,
+            @RequestParam String delegueEmail,
+            @RequestParam(required = false, defaultValue = "") String delegueMotif
+    ) {
+        return ResponseEntity.ok(eventService.delegateParticipation(id, delegueNom, delegueEmail, delegueMotif));
+    }
+
+    @PatchMapping(ADD_OBSERVATION_EVENT)
+    public ResponseEntity<EventDto> addObservation(
+            @PathVariable UUID id,
+            @RequestParam String observation
+    ) {
+        return ResponseEntity.ok(eventService.addObservation(id, observation));
+    }
+
+    @PatchMapping(DEMANDER_DELEGATION_EVENT)
+    public ResponseEntity<EventDto> demanderDelegation(
+            @PathVariable UUID id,
+            @RequestParam String motif
+    ) {
+        return ResponseEntity.ok(eventService.demanderDelegation(id, motif));
+    }
+
+    @PutMapping(SAVE_COMPTE_RENDU)
+    public ResponseEntity<EventDto> saveCompteRendu(
+            @PathVariable UUID id,
+            @RequestParam(required = false, defaultValue = "") String points,
+            @RequestParam(required = false, defaultValue = "") String decisions,
+            @RequestParam(required = false, defaultValue = "") String actions
+    ) {
+        return ResponseEntity.ok(eventService.saveCompteRendu(id, points, decisions, actions));
+    }
+
+    @PostMapping(DUPLICATE_EVENT)
+    public ResponseEntity<EventDto> dupliquerEnBrouillon(@PathVariable UUID id) {
+        return new ResponseEntity<>(eventService.dupliquerEnBrouillon(id), HttpStatus.CREATED);
     }
 }

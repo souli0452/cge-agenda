@@ -22,6 +22,9 @@ import java.util.List;
 @AllArgsConstructor
 public class EventDto extends AuditEntityDto {
 
+    /** Espace agenda (chef) auquel appartient/doit appartenir cet événement. */
+    private java.util.UUID espaceId;
+
     @NotBlank(message = "Le titre est obligatoire")
     @Size(max = 255)
     private String title;
@@ -46,11 +49,25 @@ public class EventDto extends AuditEntityDto {
     @Size(max = 100)
     private String ville;
 
+    @Size(max = 30)
+    private String lieuType;
+
+    @Size(max = 150)
+    private String salle;
+
+    @Size(max = 200)
+    private String nomLieu;
+
     @NotNull(message = "Le statut est obligatoire")
     private EventStatus status;
 
     @NotNull(message = "Le type est obligatoire")
     private EventType type;
+
+    private java.util.UUID dupliqueeDeId;
+
+    @Builder.Default
+    private List<String> actionsDisponibles = new ArrayList<>();
 
     @Valid
     @Builder.Default
@@ -63,6 +80,33 @@ public class EventDto extends AuditEntityDto {
     private List<ParticipantDto> participants = new ArrayList<>();
 
     private List<String> structures;
+
+    // ==========================================
+    // WORKFLOW DE VALIDATION CGE
+    // ==========================================
+    private String changeSuggestions;
+    private String champsModifies;
+    private String rejectionReason;
+    private String validationComment;
+    private String creatorEmail;
+    private String creatorUsername;
+    private String creatorRole;
+    private String delegueNom;
+    private String delegueEmail;
+    private String delegueMotif;
+    private boolean estDelegue;
+    private java.time.LocalDateTime delegueDate;
+    private String delegueParEmail;
+    private Boolean delegationConfirmee;
+    private gov.bf.ascelc.cge_agenda.enums.ObservationType observationType;
+    private java.time.LocalDateTime soumisLe;
+    private java.time.LocalDateTime echeanceValidation;
+
+    private String compteRenduPoints;
+    private String compteRenduDecisions;
+    private String compteRenduActions;
+    private String compteRenduRedigePar;
+    private java.time.LocalDateTime compteRenduDate;
 
 
     public boolean isGlobalScheduleMode() {

@@ -3,7 +3,7 @@ package gov.bf.ascelc.cge_agenda.entities;
 import gov.bf.ascelc.cge_agenda.abstracts.AuditEntity;
 import gov.bf.ascelc.cge_agenda.enums.EventStatus;
 import gov.bf.ascelc.cge_agenda.enums.EventType;
-import gov.bf.ascelc.cge_agenda.utils.EventUtils;
+import gov.bf.ascelc.cge_agenda.enums.ObservationType;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -11,6 +11,7 @@ import lombok.experimental.SuperBuilder;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -20,6 +21,15 @@ import java.util.Set;
 @AllArgsConstructor
 @Table(name = "event")
 public class Event extends AuditEntity {
+
+    /**
+     * Espace agenda (chef) auquel appartient cet événement — fondement du cloisonnement.
+     * Nullable en base pour les événements historiques créés avant le passage au modèle
+     * multi-espaces (rattachés à un espace "legacy" lors de la migration).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "espace_id", foreignKey = @ForeignKey(name = "fk_event_espace"))
+    private Espace espace;
 
     @Column(name = "title", nullable = false)
     private String title;
@@ -42,6 +52,15 @@ public class Event extends AuditEntity {
     @Column(name = "ville")
     private String ville;
 
+    @Column(name = "lieu_type", length = 30)
+    private String lieuType;
+
+    @Column(name = "salle", length = 150)
+    private String salle;
+
+    @Column(name = "nom_lieu", length = 200)
+    private String nomLieu;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false,length = 50)
     private EventStatus status;
@@ -49,6 +68,96 @@ public class Event extends AuditEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false,length = 50)
     private EventType type;
+
+    @Column(name = "deleted", nullable = false)
+    @Builder.Default
+    private boolean deleted = false;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    @Builder.Default
+    private Long version = 0L;
+
+    @Column(name = "dupliquee_de_id")
+    private UUID dupliqueeDeId;
+
+    // ==========================================
+    // WORKFLOW DE VALIDATION CGE
+    // ==========================================
+    @Column(name = "validation_comment", columnDefinition = "TEXT")
+    private String validationComment;
+
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
+    @Column(name = "change_suggestions", columnDefinition = "TEXT")
+    private String changeSuggestions;
+
+    /** Liste lisible des champs modifiés lors de la dernière resoumission après correction. */
+    @Column(name = "champs_modifies", columnDefinition = "TEXT")
+    private String champsModifies;
+
+    @Column(name = "creator_email")
+    private String creatorEmail;
+
+    @Column(name = "creator_username")
+    private String creatorUsername;
+
+    @Column(name = "creator_role")
+    private String creatorRole;
+
+    @Column(name = "delegue_nom")
+    private String delegueNom;
+
+    @Column(name = "delegue_email")
+    private String delegueEmail;
+
+    @Column(name = "delegue_motif", columnDefinition = "TEXT")
+    private String delegueMotif;
+
+    @Column(name = "est_delegue", nullable = false)
+    @Builder.Default
+    private boolean estDelegue = false;
+
+    @Column(name = "delegue_date")
+    private java.time.LocalDateTime delegueDate;
+
+    @Column(name = "delegue_par_email")
+    private String delegueParEmail;
+
+    /** null = en attente de réponse du délégué ; true = acceptée ; false = déclinée. */
+    @Column(name = "delegation_confirmee")
+    private Boolean delegationConfirmee;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "observation_type", length = 30)
+    private ObservationType observationType;
+
+    /** Horodatage de (re)soumission à validation — point de départ du calcul d'échéance. */
+    @Column(name = "soumis_le")
+    private java.time.LocalDateTime soumisLe;
+
+    /** Échéance calculée (heures ouvrables) pour la validation CGE, utilisée par les relances. */
+    @Column(name = "echeance_validation")
+    private java.time.LocalDateTime echeanceValidation;
+
+    // ==========================================
+    // COMPTE-RENDU DE RÉUNION (disponible une fois TERMINE)
+    // ==========================================
+    @Column(name = "compte_rendu_points", columnDefinition = "TEXT")
+    private String compteRenduPoints;
+
+    @Column(name = "compte_rendu_decisions", columnDefinition = "TEXT")
+    private String compteRenduDecisions;
+
+    @Column(name = "compte_rendu_actions", columnDefinition = "TEXT")
+    private String compteRenduActions;
+
+    @Column(name = "compte_rendu_redige_par")
+    private String compteRenduRedigePar;
+
+    @Column(name = "compte_rendu_date")
+    private java.time.LocalDateTime compteRenduDate;
 
     /**
      * Relation One-to-Many avec Schedule
@@ -72,54 +181,6 @@ public class Event extends AuditEntity {
     @Builder.Default
     private Set<ParticipantEvent> participantEvents = new HashSet<>();
 
-
-    /**
-     * Vérifie si l'événement est multi-jours
-     */
-    @Transient
-    public boolean isMultiJours() {
-        return EventUtils.isMultiDayEvent(this);
-    }
-
-    /**
-     * Obtient le nombre de jours
-     */
-    @Transient
-    public long getNombreJours() {
-        return EventUtils.getEventDuration(this);
-    }
-
-    /**
-     * Vérifie si l'événement se déroule à une date donnée
-     */
-    @Transient
-    public boolean seDerouleLeJour(LocalDate date) {
-        return EventUtils.eventOccursOnDate(this, date);
-    }
-
-    /**
-     * Vérifie si l'événement est en cours
-     */
-    @Transient
-    public boolean isEnCours() {
-        return EventUtils.isEventOngoing(this);
-    }
-
-    /**
-     * Vérifie si l'événement est terminé
-     */
-    @Transient
-    public boolean isTermine() {
-        return EventUtils.isEventFinished(this);
-    }
-
-    /**
-     * Vérifie si l'événement est à venir
-     */
-    @Transient
-    public boolean isAVenir() {
-        return EventUtils.isEventUpcoming(this);
-    }
 
     public void addSchedule(Schedule schedule) {
         schedules.add(schedule);

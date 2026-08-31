@@ -1,0 +1,12 @@
+package gov.bf.ascelc.cge_agenda.enums;
+
+public enum NotificationType {
+    EVENEMENT_A_VALIDER,
+    EVENEMENT_VALIDE,
+    MODIFICATIONS_DEMANDEES,
+    EVENEMENT_REJETE,
+    OBSERVATION_RECUE,
+    DELEGATION_DEMANDEE,
+    DELEGATION_REFUSEE,
+    RELANCE
+}
