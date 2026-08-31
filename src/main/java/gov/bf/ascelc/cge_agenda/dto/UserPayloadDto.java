@@ -15,4 +15,6 @@ public class UserPayloadDto {
     private String role;
     private boolean enabled;
     private String password;
+    /** Si vrai, l'utilisateur devra configurer la double authentification (TOTP) à sa prochaine connexion. */
+    private boolean requireMfa;
 }

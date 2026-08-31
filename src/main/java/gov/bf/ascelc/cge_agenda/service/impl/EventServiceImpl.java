@@ -10,8 +10,12 @@ import gov.bf.ascelc.cge_agenda.repository.EventRepository;
 import gov.bf.ascelc.cge_agenda.repository.ParticipantEventRepository;
 import gov.bf.ascelc.cge_agenda.repository.ParticipantRepository;
 import gov.bf.ascelc.cge_agenda.repository.ScheduleRepository;
+import gov.bf.ascelc.cge_agenda.enums.NotificationType;
+import gov.bf.ascelc.cge_agenda.enums.ObservationType;
+import gov.bf.ascelc.cge_agenda.service.AuditService;
 import gov.bf.ascelc.cge_agenda.service.EmailService;
 import gov.bf.ascelc.cge_agenda.service.EventService;
+import gov.bf.ascelc.cge_agenda.service.NotificationService;
 import gov.bf.ascelc.cge_agenda.utils.ValidationUtils;
 
 import com.itextpdf.io.font.constants.StandardFonts;
@@ -79,6 +83,55 @@ public class EventServiceImpl implements EventService {
     private final ParticipantEventRepository participantEventRepository;
     private final ParticipantMapper participantMapper;
     private final EmailService emailService;
+    private final AuditService auditService;
+    private final NotificationService notificationService;
+    private final gov.bf.ascelc.cge_agenda.repository.EventTypeSlaRepository eventTypeSlaRepository;
+    private final gov.bf.ascelc.cge_agenda.repository.JourFerieRepository jourFerieRepository;
+    private final gov.bf.ascelc.cge_agenda.service.OrgConfigService orgConfigService;
+    private final gov.bf.ascelc.cge_agenda.repository.EspaceRepository espaceRepository;
+    private final gov.bf.ascelc.cge_agenda.service.EspaceService espaceService;
+
+    private static final int DEFAULT_DELAI_HEURES_OUVRABLES = 48;
+    private static final int DEFAULT_DELAI_AVANT_EVENEMENT_HEURES = 24;
+
+    /**
+     * Échéance de validation = MIN(soumission + délai en heures ouvrables, début de
+     * l'événement - délai avant événement), selon la config SLA du type d'événement
+     * (à défaut : 48h ouvrables / 24h avant l'événement).
+     */
+    private LocalDateTime calculerEcheance(Event event, LocalDateTime soumisLe) {
+        var sla = eventTypeSlaRepository.findByEventType(event.getType()).orElse(null);
+        int delaiHeuresOuvrables = sla != null ? sla.getDelaiHeuresOuvrables() : DEFAULT_DELAI_HEURES_OUVRABLES;
+        int delaiAvantEvenementHeures = sla != null ? sla.getDelaiAvantEvenementHeures() : DEFAULT_DELAI_AVANT_EVENEMENT_HEURES;
+
+        var feries = jourFerieRepository.findAllByOrderByDateAsc().stream()
+                .map(gov.bf.ascelc.cge_agenda.entities.JourFerie::getDate)
+                .collect(java.util.stream.Collectors.toSet());
+
+        var orgConfig = orgConfigService.getConfig();
+        java.time.LocalTime heureDebut = orgConfig.getHeureDebutOuvrable() != null
+                ? orgConfig.getHeureDebutOuvrable() : gov.bf.ascelc.cge_agenda.utils.BusinessHoursCalculator.DEFAULT_BUSINESS_START;
+        java.time.LocalTime heureFin = orgConfig.getHeureFinOuvrable() != null
+                ? orgConfig.getHeureFinOuvrable() : gov.bf.ascelc.cge_agenda.utils.BusinessHoursCalculator.DEFAULT_BUSINESS_END;
+
+        LocalDateTime parDelaiOuvrable = gov.bf.ascelc.cge_agenda.utils.BusinessHoursCalculator
+                .ajouterHeuresOuvrables(soumisLe, delaiHeuresOuvrables, feries, heureDebut, heureFin);
+        LocalDateTime parAvantEvenement = event.getStartDate().atStartOfDay().minusHours(delaiAvantEvenementHeures);
+
+        return parDelaiOuvrable.isBefore(parAvantEvenement) ? parDelaiOuvrable : parAvantEvenement;
+    }
+
+    /**
+     * Journalise une transition de statut dans l'historique d'audit (écriture seule,
+     * table audit_log). Pas d'HttpServletRequest disponible depuis la couche service :
+     * IP/User-Agent resteront vides pour ces entrées, l'auteur est déjà capturé via le
+     * contexte de sécurité courant.
+     */
+    private void logTransition(Event event, String action, EventStatus statutAvant, String commentaire) {
+        String details = "statut : " + statutAvant + " → " + event.getStatus()
+                + (commentaire != null && !commentaire.isBlank() ? " | commentaire : " + commentaire : "");
+        auditService.logAction(action, "EVENT", event.getId().toString(), event.getTitle(), details, null);
+    }
 
 
     @Override
@@ -96,9 +149,27 @@ public class EventServiceImpl implements EventService {
         validateScheduleMode(dto);
         log.info("validateScheduleMode OK");
 
+        if (dto.getEspaceId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "L'espace de destination est obligatoire");
+        }
+        gov.bf.ascelc.cge_agenda.entities.Espace espace = espaceRepository.findById(dto.getEspaceId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Espace non trouvé : " + dto.getEspaceId()));
+
+        String createurEmail = currentUserEmail();
+        if (!espaceService.peutCreerDans(espace.getId(), createurEmail)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Vous n'êtes ni propriétaire ni gestionnaire de cet espace");
+        }
+        boolean estChef = espace.getChefEmail().equalsIgnoreCase(createurEmail);
+
         Event event = eventMapper.toEntity(dto);
+        event.setEspace(espace);
+        // Le chef est maître chez lui : son événement est directement confirmé, sans
+        // validation au-dessus. Un gestionnaire délégué (secrétaire/protocole) suit le
+        // workflow existant (BROUILLON → soumission → validation par le chef).
+        event.setStatus(estChef ? EventStatus.PLANIFIE : EventStatus.BROUILLON);
         event.setCreatedAt(LocalDateTime.now());
-        event.setCreatorEmail(currentUserEmail());
+        event.setCreatorEmail(createurEmail);
         event.setCreatorUsername(currentUsername());
         event.setCreatorRole(currentUserRole());
         event = eventRepository.save(event);
@@ -163,6 +234,7 @@ public class EventServiceImpl implements EventService {
         log.info("Annulation de l'événement : ID = {}", id);
         return eventRepository.findById(id)
                 .map(event -> {
+                    assertAccessible(event);
                     event.setStatus(EventStatus.ANNULER);
                     event.setDescription(event.getDescription() +
                             "\n\n[ANNULÉ] Raison : " + reason);
@@ -179,7 +251,7 @@ public class EventServiceImpl implements EventService {
                             });
 
                     log.info("Événement annulé : ID = {}", id);
-                    return eventMapper.toDto(updated);
+                    return enrichWithStructures(eventMapper.toDto(updated), updated);
                 })
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -197,6 +269,7 @@ public class EventServiceImpl implements EventService {
 
         return eventRepository.findById(id)
                 .map(event -> {
+                    assertAccessible(event);
                     LocalTime globalStartTime = null;
                     LocalTime globalEndTime   = null;
 
@@ -243,7 +316,7 @@ public class EventServiceImpl implements EventService {
                             });
 
                     log.info("Événement reporté : ID = {}", id);
-                    return eventMapper.toDto(updated);
+                    return enrichWithStructures(eventMapper.toDto(updated), updated);
                 })
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -260,8 +333,10 @@ public class EventServiceImpl implements EventService {
                                        LocalDate startDate, LocalDate endDate) {
         log.info("Recherche : keyword={}, type={}, status={}",
                 keyword, type, status);
+        List<UUID> espacesAccessibles = espacesAccessiblesCourantOuNull();
         List<Event> events = eventRepository.findAll().stream()
                 .filter(e -> !e.isDeleted())
+                .filter(e -> estAccessible(e, espacesAccessibles))
                 .collect(Collectors.toList());
 
         if (keyword != null && !keyword.trim().isEmpty()) {
@@ -301,9 +376,11 @@ public class EventServiceImpl implements EventService {
     @Transactional(readOnly = true)
     public List<EventDto> getEventsByDateRange(LocalDate startDate, LocalDate endDate) {
         log.info("Événements entre {} et {}", startDate, endDate);
+        List<UUID> espacesAccessibles = espacesAccessiblesCourantOuNull();
         List<Event> events = eventRepository.findAll().stream()
                 .filter(e -> !e.getEndDate().isBefore(startDate) &&
                         !e.getStartDate().isAfter(endDate))
+                .filter(e -> estAccessible(e, espacesAccessibles))
                 .collect(Collectors.toList());
         log.info("{} événements trouvés", events.size());
         return events.stream()
@@ -323,6 +400,7 @@ public class EventServiceImpl implements EventService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Événement non trouvé : " + eventId));
+        assertAccessible(event);
 
         List<Schedule> schedules = scheduleRepository.findByEventId(eventId);
         Participant participant;
@@ -371,10 +449,10 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional
     public EventDto removeParticipant(UUID eventId, UUID participantId) {
-        if (!eventRepository.existsById(eventId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "Événement non trouvé : " + eventId);
-        }
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Événement non trouvé : " + eventId));
+        assertAccessible(event);
         participantEventRepository.deleteByEventIdAndParticipantId(
                 eventId, participantId);
         log.info("Participant retiré");
@@ -387,10 +465,10 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional(readOnly = true)
     public List<ParticipantDto> getEventParticipants(UUID eventId) {
-        if (!eventRepository.existsById(eventId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "Événement non trouvé : " + eventId);
-        }
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Événement non trouvé : " + eventId));
+        assertAccessible(event);
         return participantMapper.toDtos(
                 participantEventRepository.findParticipantsByEventId(eventId));
     }
@@ -407,6 +485,7 @@ public class EventServiceImpl implements EventService {
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + eventId));
+        assertAccessible(event);
 
         List<Schedule> schedules = scheduleRepository.findByEventId(eventId);
         List<ParticipantDto> imported = new ArrayList<>();
@@ -466,30 +545,58 @@ public class EventServiceImpl implements EventService {
     public EventDto update(UUID id, EventDto eventDto) {
         return eventRepository.findById(id)
                 .map(existing -> {
+                    assertAccessible(existing);
                     validateEventDates(eventDto.getStartDate(), eventDto.getEndDate());
 
-                    boolean hasChanges =
-                            isChanged(existing.getTitle(),       eventDto.getTitle())       ||
-                                    isChanged(existing.getDescription(), eventDto.getDescription()) ||
-                                    !Objects.equals(existing.getType(),   eventDto.getType())       ||
-                                    !Objects.equals(existing.getStatus(), eventDto.getStatus())     ||
-                                    !Objects.equals(existing.getStartDate(), eventDto.getStartDate()) ||
+                    // Champs "majeurs" : changer l'un d'eux sur un événement déjà planifié
+                    // remet l'événement en attente de validation (nouvelle date/lieu/modalité
+                    // à revalider). Les champs "mineurs" (titre/description) s'appliquent
+                    // directement, sans revalidation.
+                    boolean champsMajeursChanges =
+                            !Objects.equals(existing.getStartDate(), eventDto.getStartDate()) ||
                                     !Objects.equals(existing.getEndDate(),   eventDto.getEndDate())   ||
+                                    !Objects.equals(existing.getType(),   eventDto.getType())       ||
+                                    isChanged(existing.getLieuType(),    eventDto.getLieuType())    ||
+                                    isChanged(existing.getSalle(),       eventDto.getSalle())       ||
+                                    isChanged(existing.getNomLieu(),     eventDto.getNomLieu())     ||
                                     isChanged(existing.getVille(),       eventDto.getVille())       ||
                                     isChanged(existing.getPays(),        eventDto.getPays())        ||
                                     isChanged(existing.getMeetingLink(), eventDto.getMeetingLink());
 
-                    log.info("🔍 update id={} hasChanges={}", id, hasChanges);
+                    boolean champsMineursChanges =
+                            isChanged(existing.getTitle(),       eventDto.getTitle())       ||
+                                    isChanged(existing.getDescription(), eventDto.getDescription());
+
+                    boolean hasChanges = champsMajeursChanges || champsMineursChanges
+                            || !Objects.equals(existing.getStatus(), eventDto.getStatus());
+
+                    List<String> champsModifiesListe = listerChampsModifies(existing, eventDto);
+
+                    log.info("🔍 update id={} champsMajeurs={} champsMineurs={}", id, champsMajeursChanges, champsMineursChanges);
 
                     boolean wasACorriger = existing.getStatus() == EventStatus.A_CORRIGER;
+                    boolean wasPlanifie  = existing.getStatus() == EventStatus.PLANIFIE;
 
                     eventMapper.updateEntityFromDto(eventDto, existing);
                     existing.setUpdatedAt(LocalDateTime.now());
 
                     // Re-soumission automatique après correction demandée par le CGE
                     if (wasACorriger && hasChanges) {
+                        LocalDateTime resoumisLe = LocalDateTime.now();
                         existing.setStatus(EventStatus.EN_ATTENTE_VALIDATION);
                         existing.setChangeSuggestions(null);
+                        existing.setSoumisLe(resoumisLe);
+                        existing.setEcheanceValidation(calculerEcheance(existing, resoumisLe));
+                        existing.setChampsModifies(String.join(", ", champsModifiesListe));
+                    } else if (wasPlanifie && champsMajeursChanges) {
+                        // Modification majeure d'un événement déjà planifié → revalidation requise
+                        LocalDateTime resoumisLe = LocalDateTime.now();
+                        existing.setStatus(EventStatus.EN_ATTENTE_VALIDATION);
+                        existing.setSoumisLe(resoumisLe);
+                        existing.setEcheanceValidation(calculerEcheance(existing, resoumisLe));
+                        existing.setChampsModifies(String.join(", ", champsModifiesListe));
+                        auditService.logAction("MODIFICATION_MAJEURE_EVENEMENT", "EVENT", id.toString(), existing.getTitle(),
+                                "statut : PLANIFIE → EN_ATTENTE_VALIDATION (modification majeure)", null);
                     }
 
                     Event updated = eventRepository.save(existing);
@@ -504,6 +611,15 @@ public class EventServiceImpl implements EventService {
                                     }
                                 });
                         log.info("✅ Re-soumission automatique après corrections → {}", uid);
+                    } else if (wasPlanifie && champsMajeursChanges) {
+                        TransactionSynchronizationManager.registerSynchronization(
+                                new TransactionSynchronization() {
+                                    @Override
+                                    public void afterCommit() {
+                                        emailService.sendValidationRequest(uid);
+                                    }
+                                });
+                        log.info("✅ Modification majeure → retour en attente de validation : {}", uid);
                     } else if (hasChanges) {
                         TransactionSynchronizationManager.registerSynchronization(
                                 new TransactionSynchronization() {
@@ -517,7 +633,7 @@ public class EventServiceImpl implements EventService {
                         log.info("⏭ Aucun changement → pas de notification");
                     }
 
-                    return eventMapper.toDto(updated);
+                    return enrichWithStructures(eventMapper.toDto(updated), updated);
                 })
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -533,15 +649,36 @@ public class EventServiceImpl implements EventService {
         return !a.equals(b);
     }
 
+    /**
+     * Liste lisible des champs différents entre la version en base (avant resoumission)
+     * et le DTO resoumis, affichée au CGE dans le dashboard de validation pour éviter
+     * de devoir tout relire après une demande de corrections.
+     */
+    private List<String> listerChampsModifies(Event existing, EventDto dto) {
+        List<String> champs = new ArrayList<>();
+        if (isChanged(existing.getTitle(), dto.getTitle())) champs.add("Titre");
+        if (isChanged(existing.getDescription(), dto.getDescription())) champs.add("Description");
+        if (!Objects.equals(existing.getStartDate(), dto.getStartDate())
+                || !Objects.equals(existing.getEndDate(), dto.getEndDate())) champs.add("Dates");
+        if (!Objects.equals(existing.getType(), dto.getType())) champs.add("Type");
+        if (isChanged(existing.getLieuType(), dto.getLieuType())
+                || isChanged(existing.getSalle(), dto.getSalle())
+                || isChanged(existing.getNomLieu(), dto.getNomLieu())
+                || isChanged(existing.getVille(), dto.getVille())
+                || isChanged(existing.getPays(), dto.getPays())) champs.add("Lieu");
+        if (isChanged(existing.getMeetingLink(), dto.getMeetingLink())) champs.add("Lien de visioconférence");
+        return champs;
+    }
+
     // ==========================================
     // TEST REMINDER
     // ==========================================
     @Override
     public void sendTestReminder(UUID eventId) {
-        if (!eventRepository.existsById(eventId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                    "Événement non trouvé : " + eventId);
-        }
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Événement non trouvé : " + eventId));
+        assertAccessible(event);
         emailService.sendEventReminder(eventId, 7);
     }
 
@@ -552,9 +689,11 @@ public class EventServiceImpl implements EventService {
     @Transactional(readOnly = true)
     public List<EventDto> allEvents() {
         try {
+            List<UUID> espacesAccessibles = espacesAccessiblesCourantOuNull();
             return eventRepository
                     .findAllWithParticipantsOrderedByStatusAndProximity()
                     .stream()
+                    .filter(e -> estAccessible(e, espacesAccessibles))
                     .map(e -> enrichWithStructures(eventMapper.toDto(e), e))
                     .toList();
         } catch (Exception e) {
@@ -573,6 +712,9 @@ public class EventServiceImpl implements EventService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Événement non trouvé : " + id));
+        if (!estAccessible(event, espacesAccessiblesCourantOuNull())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Événement non trouvé : " + id);
+        }
         return enrichWithStructures(eventMapper.toDto(event), event);
     }
 
@@ -586,6 +728,7 @@ public class EventServiceImpl implements EventService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Événement non trouvé : " + id));
+        assertAccessible(event);
 
         event.setDeleted(true);
         eventRepository.save(event);
@@ -598,7 +741,9 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional(readOnly = true)
     public List<EventDto> getCorbeille() {
+        List<UUID> espacesAccessibles = espacesAccessiblesCourantOuNull();
         return eventRepository.findAllDeleted().stream()
+                .filter(e -> estAccessible(e, espacesAccessibles))
                 .map(e -> enrichWithStructures(eventMapper.toDto(e), e))
                 .toList();
     }
@@ -610,6 +755,7 @@ public class EventServiceImpl implements EventService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Événement non trouvé : " + id));
+        assertAccessible(event);
 
         event.setDeleted(false);
         event = eventRepository.save(event);
@@ -624,6 +770,7 @@ public class EventServiceImpl implements EventService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Événement non trouvé : " + id));
+        assertAccessible(event);
 
         log.info("Suppression définitive : {} schedules, {} fichiers, {} participants",
                 event.getSchedules().size(),
@@ -664,15 +811,21 @@ public class EventServiceImpl implements EventService {
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+        assertAccessible(event);
 
         if (event.getStatus() != EventStatus.BROUILLON) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Seul un événement en brouillon peut être soumis à validation");
         }
 
+        EventStatus statutAvant = event.getStatus();
+        LocalDateTime now = LocalDateTime.now();
         event.setStatus(EventStatus.EN_ATTENTE_VALIDATION);
-        event.setUpdatedAt(LocalDateTime.now());
+        event.setSoumisLe(now);
+        event.setEcheanceValidation(calculerEcheance(event, now));
+        event.setUpdatedAt(now);
         Event saved = eventRepository.save(event);
+        logTransition(saved, "SOUMISSION_EVENEMENT", statutAvant, null);
         final UUID uid = saved.getId();
 
         TransactionSynchronizationManager.registerSynchronization(
@@ -684,7 +837,7 @@ public class EventServiceImpl implements EventService {
                 });
 
         log.info("✓ Événement soumis à validation : {}", id);
-        return eventMapper.toDto(saved);
+        return enrichWithStructures(eventMapper.toDto(saved), saved);
     }
 
     @Override
@@ -695,16 +848,24 @@ public class EventServiceImpl implements EventService {
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
 
         assertNotOwnEvent(event);
+        assertEstValidateur(event);
 
         if (event.getStatus() != EventStatus.EN_ATTENTE_VALIDATION) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Seul un événement en attente de validation peut être validé");
         }
 
+        EventStatus statutAvant = event.getStatus();
         event.setStatus(EventStatus.PLANIFIE);
         event.setValidationComment(comment);
         event.setUpdatedAt(LocalDateTime.now());
         Event saved = eventRepository.save(event);
+        logTransition(saved, "VALIDATION_EVENEMENT", statutAvant, comment);
+
+        // Diffusion 2/4 : notification in-app pour le créateur (les emails, diffusions
+        // 1/3/4, partent après commit ci-dessous via l'outbox transactionnel existant).
+        notificationService.notifier(saved.getCreatorEmail(), NotificationType.EVENEMENT_VALIDE,
+                saved.getId(), "Votre événement \"" + saved.getTitle() + "\" a été validé.");
 
         final List<UUID> participantIds = saved.getParticipantEvents().stream()
                 .map(pe -> pe.getParticipant().getId())
@@ -715,14 +876,21 @@ public class EventServiceImpl implements EventService {
                 new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
+                        // 1. Participants (invitation + convocation)
                         for (UUID pid : participantIds) {
                             emailService.sendEventInvitation(uid, pid);
                         }
+                        // 2. Créateur (copie de confirmation)
+                        emailService.sendEventValidatedToCreator(uid);
+                        // 3. Protocole
+                        emailService.sendEventValidatedToProtocole(uid);
+                        // 4. Délégué désigné : couvert par sendDelegationNotice, déclenché
+                        // séparément lors de la désignation (delegateParticipation).
                     }
                 });
 
         log.info("✓ Événement validé : {} ({} invitation(s))", id, participantIds.size());
-        return eventMapper.toDto(saved);
+        return enrichWithStructures(eventMapper.toDto(saved), saved);
     }
 
     @Override
@@ -733,6 +901,7 @@ public class EventServiceImpl implements EventService {
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
 
         assertNotOwnEvent(event);
+        assertEstValidateur(event);
 
         if (event.getStatus() != EventStatus.EN_ATTENTE_VALIDATION
                 && event.getStatus() != EventStatus.A_CORRIGER) {
@@ -740,10 +909,14 @@ public class EventServiceImpl implements EventService {
                     "Seul un événement en attente de validation ou à corriger peut être rejeté");
         }
 
+        EventStatus statutAvant = event.getStatus();
         event.setStatus(EventStatus.REJETE);
         event.setRejectionReason(reason);
         event.setUpdatedAt(LocalDateTime.now());
         Event saved = eventRepository.save(event);
+        logTransition(saved, "REJET_EVENEMENT", statutAvant, reason);
+        notificationService.notifier(saved.getCreatorEmail(), NotificationType.EVENEMENT_REJETE,
+                saved.getId(), "Votre événement \"" + saved.getTitle() + "\" a été rejeté.");
         final UUID uid = saved.getId();
 
         TransactionSynchronizationManager.registerSynchronization(
@@ -755,7 +928,7 @@ public class EventServiceImpl implements EventService {
                 });
 
         log.info("✓ Événement rejeté : {}", id);
-        return eventMapper.toDto(saved);
+        return enrichWithStructures(eventMapper.toDto(saved), saved);
     }
 
     @Override
@@ -766,16 +939,21 @@ public class EventServiceImpl implements EventService {
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
 
         assertNotOwnEvent(event);
+        assertEstValidateur(event);
 
         if (event.getStatus() != EventStatus.EN_ATTENTE_VALIDATION) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Seul un événement en attente de validation peut recevoir une demande de modifications");
         }
 
+        EventStatus statutAvant = event.getStatus();
         event.setStatus(EventStatus.A_CORRIGER);
         event.setChangeSuggestions(suggestions);
         event.setUpdatedAt(LocalDateTime.now());
         Event saved = eventRepository.save(event);
+        logTransition(saved, "DEMANDE_MODIFICATIONS_EVENEMENT", statutAvant, suggestions);
+        notificationService.notifier(saved.getCreatorEmail(), NotificationType.MODIFICATIONS_DEMANDEES,
+                saved.getId(), "Des modifications ont été demandées sur votre événement \"" + saved.getTitle() + "\".");
         final UUID uid = saved.getId();
 
         TransactionSynchronizationManager.registerSynchronization(
@@ -787,7 +965,7 @@ public class EventServiceImpl implements EventService {
                 });
 
         log.info("✓ Modifications demandées : {}", id);
-        return eventMapper.toDto(saved);
+        return enrichWithStructures(eventMapper.toDto(saved), saved);
     }
 
     @Override
@@ -796,6 +974,16 @@ public class EventServiceImpl implements EventService {
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+
+        // Le chef de l'espace peut toujours déléguer ; le créateur peut le faire
+        // uniquement s'il y a été invité par une observation DELEGATION_DEMANDEE
+        // (voir calculerActionsDisponibles).
+        boolean peutDeleguer = estValidateurDeLEspace(event)
+                || (isCreator(event) && event.getObservationType() == ObservationType.DELEGATION_DEMANDEE);
+        if (!peutDeleguer) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Vous n'êtes pas autorisé à désigner un délégué pour cet événement");
+        }
 
         if (event.getStatus() != EventStatus.PLANIFIE && event.getStatus() != EventStatus.EN_COURS) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -808,8 +996,13 @@ public class EventServiceImpl implements EventService {
         event.setEstDelegue(true);
         event.setDelegueDate(LocalDateTime.now());
         event.setDelegueParEmail(currentUserEmail());
+        event.setDelegationConfirmee(null);
         event.setUpdatedAt(LocalDateTime.now());
         Event saved = eventRepository.save(event);
+        auditService.logAction("DELEGATION_EVENEMENT", "EVENT", saved.getId().toString(), saved.getTitle(),
+                "délégué : " + delegueNom + " <" + delegueEmail + ">" +
+                        (delegueMotif != null && !delegueMotif.isBlank() ? " | motif : " + delegueMotif : ""),
+                null);
         final UUID uid = saved.getId();
 
         TransactionSynchronizationManager.registerSynchronization(
@@ -821,15 +1014,30 @@ public class EventServiceImpl implements EventService {
                 });
 
         log.info("✓ Délégation enregistrée : {} → {}", id, delegueEmail);
-        return eventMapper.toDto(saved);
+        return enrichWithStructures(eventMapper.toDto(saved), saved);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public EventDto addObservation(UUID id, String observation) {
+        return enregistrerObservation(id, observation, ObservationType.CORRECTION,
+                "OBSERVATION_EVENEMENT", "Une observation a été ajoutée sur votre événement \"");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public EventDto demanderDelegation(UUID id, String motif) {
+        return enregistrerObservation(id, motif, ObservationType.DELEGATION_DEMANDEE,
+                "DEMANDE_DELEGATION_EVENEMENT", "Une délégation est demandée pour votre événement \"");
+    }
+
+    private EventDto enregistrerObservation(UUID id, String observation, ObservationType type,
+                                             String auditAction, String notifMessagePrefix) {
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+
+        assertEstValidateur(event);
 
         if (event.getStatus() != EventStatus.PLANIFIE && event.getStatus() != EventStatus.EN_COURS) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -837,11 +1045,16 @@ public class EventServiceImpl implements EventService {
         }
 
         event.setValidationComment(observation);
+        event.setObservationType(type);
         event.setUpdatedAt(LocalDateTime.now());
         Event saved = eventRepository.save(event);
+        auditService.logAction(auditAction, "EVENT", saved.getId().toString(), saved.getTitle(),
+                "observation : " + observation, null);
+        notificationService.notifier(saved.getCreatorEmail(), NotificationType.OBSERVATION_RECUE,
+                saved.getId(), notifMessagePrefix + saved.getTitle() + "\".");
 
-        log.info("✓ Observation enregistrée : {}", id);
-        return eventMapper.toDto(saved);
+        log.info("✓ Observation enregistrée ({}) : {}", type, id);
+        return enrichWithStructures(eventMapper.toDto(saved), saved);
     }
 
     @Override
@@ -856,9 +1069,9 @@ public class EventServiceImpl implements EventService {
                     "Le compte-rendu n'est disponible que pour un événement terminé");
         }
 
-        if (!isCgeOrAdmin() && !isCreator(event)) {
+        if (!estValidateurDeLEspace(event) && !isCreator(event)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Seuls le CGE, l'administrateur ou le créateur peuvent rédiger le compte-rendu");
+                    "Seuls le chef de cet espace, l'administrateur ou le créateur peuvent rédiger le compte-rendu");
         }
 
         event.setCompteRenduPoints(points);
@@ -870,16 +1083,85 @@ public class EventServiceImpl implements EventService {
         Event saved = eventRepository.save(event);
 
         log.info("✓ Compte-rendu enregistré : {}", id);
-        return eventMapper.toDto(saved);
+        return enrichWithStructures(eventMapper.toDto(saved), saved);
     }
 
-    private boolean isCgeOrAdmin() {
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public EventDto dupliquerEnBrouillon(UUID id) {
+        Event source = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+        assertAccessible(source);
+
+        if (source.getStatus() != EventStatus.REJETE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Seul un événement rejeté peut être dupliqué en brouillon");
+        }
+
+        Event duplicate = Event.builder()
+                .title(source.getTitle())
+                .description(source.getDescription())
+                .startDate(source.getStartDate())
+                .endDate(source.getEndDate())
+                .meetingLink(source.getMeetingLink())
+                .pays(source.getPays())
+                .ville(source.getVille())
+                .lieuType(source.getLieuType())
+                .salle(source.getSalle())
+                .nomLieu(source.getNomLieu())
+                .type(source.getType())
+                .status(EventStatus.BROUILLON)
+                .dupliqueeDeId(source.getId())
+                .createdAt(LocalDateTime.now())
+                .creatorEmail(currentUserEmail())
+                .creatorUsername(currentUsername())
+                .creatorRole(currentUserRole())
+                .build();
+        duplicate = eventRepository.save(duplicate);
+
+        for (ParticipantEvent pe : source.getParticipantEvents()) {
+            participantEventRepository.save(ParticipantEvent.builder()
+                    .event(duplicate)
+                    .participant(pe.getParticipant())
+                    .createdAt(LocalDateTime.now())
+                    .build());
+        }
+        duplicate = eventRepository.findById(duplicate.getId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.INTERNAL_SERVER_ERROR, "Erreur lors de la duplication"));
+
+        auditService.logAction("DUPLICATION_EVENEMENT", "EVENT", duplicate.getId().toString(), duplicate.getTitle(),
+                "dupliqué depuis l'événement rejeté " + source.getId(), null);
+
+        log.info("✓ Événement dupliqué en brouillon : {} → {}", id, duplicate.getId());
+        return enrichWithStructures(eventMapper.toDto(duplicate), duplicate);
+    }
+
+    private boolean isAdmin() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null) {
             return false;
         }
         return authentication.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_CGE"));
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+    }
+
+    /**
+     * Le validateur d'un événement est le chef de l'espace auquel il appartient — pas
+     * "n'importe quel CGE/ADMIN de l'organisation". ADMIN garde un accès de secours
+     * transverse. Aucun test de rôle CGE ici : le cas CGE n'est qu'un chef parmi d'autres,
+     * distingué uniquement par les données (espace.chefEmail), jamais par le code.
+     */
+    private boolean estValidateurDeLEspace(Event event) {
+        if (isAdmin()) {
+            return true;
+        }
+        if (event.getEspace() == null) {
+            return false;
+        }
+        String email = currentUserEmail();
+        return email != null && email.equalsIgnoreCase(event.getEspace().getChefEmail());
     }
 
     private boolean isCreator(Event event) {
@@ -891,6 +1173,45 @@ public class EventServiceImpl implements EventService {
         if (isCreator(event)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Vous ne pouvez pas valider, rejeter ou demander des modifications sur votre propre événement");
+        }
+    }
+
+    /**
+     * Espaces accessibles à l'utilisateur courant (null = ADMIN, pas de filtre, vue
+     * transverse). Fondement du cloisonnement des listes/recherches d'événements.
+     */
+    private List<UUID> espacesAccessiblesCourantOuNull() {
+        if (isAdmin()) {
+            return null;
+        }
+        return espaceService.espacesAccessibles(currentUserEmail());
+    }
+
+    private boolean estAccessible(Event event, List<UUID> espacesAccessibles) {
+        if (espacesAccessibles == null) {
+            return true;
+        }
+        return event.getEspace() != null && espacesAccessibles.contains(event.getEspace().getId());
+    }
+
+    /**
+     * Garde-fou de cloisonnement à poser sur TOUTE méthode qui agit sur un événement
+     * précis via son id : sans cet appel, n'importe quel utilisateur authentifié avec
+     * un rôle métier peut lire/modifier/supprimer l'événement d'un autre espace en
+     * devinant ou en réutilisant son UUID (IDOR). 404 plutôt que 403 pour ne pas
+     * confirmer l'existence de l'événement à un utilisateur non autorisé.
+     */
+    private void assertAccessible(Event event) {
+        if (!estAccessible(event, espacesAccessiblesCourantOuNull())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Événement non trouvé : " + event.getId());
+        }
+    }
+
+    private void assertEstValidateur(Event event) {
+        if (!estValidateurDeLEspace(event)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Seul le chef de cet espace peut valider, rejeter ou demander des modifications");
         }
     }
 
@@ -958,7 +1279,9 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional(readOnly = true)
     public List<EventDto> getEventsByParticipant(UUID participantId) {
+        List<UUID> espacesAccessibles = espacesAccessiblesCourantOuNull();
         return eventRepository.findEventsByParticipantId(participantId).stream()
+                .filter(e -> estAccessible(e, espacesAccessibles))
                 .map(e -> enrichWithStructures(eventMapper.toDto(e), e))
                 .toList();
     }
@@ -1164,6 +1487,7 @@ public class EventServiceImpl implements EventService {
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Événement non trouvé : " + eventId));
+        assertAccessible(event);
 
         List<ParticipantEvent> pes = new ArrayList<>(event.getParticipantEvents());
 
@@ -1448,7 +1772,54 @@ public class EventServiceImpl implements EventService {
 
     private EventDto enrichWithStructures(EventDto dto, Event event) {
         dto.setStructures(extractUniqueStructures(event));
+        dto.setActionsDisponibles(calculerActionsDisponibles(event));
         return dto;
+    }
+
+    /**
+     * Actions autorisées sur cet événement pour l'utilisateur courant, calculées côté
+     * serveur pour que le front n'ait plus à reproduire les règles d'autorisation
+     * (source unique de vérité). Reprend les règles déjà en place dans event-detail.ts.
+     */
+    private List<String> calculerActionsDisponibles(Event event) {
+        List<String> actions = new ArrayList<>();
+        EventStatus status = event.getStatus();
+        boolean creator = isCreator(event);
+        boolean validateur = estValidateurDeLEspace(event);
+
+        boolean estOperational = status == EventStatus.PLANIFIE || status == EventStatus.EN_COURS;
+
+        if (status == EventStatus.BROUILLON && creator) {
+            actions.add("SOUMETTRE");
+        }
+        if (status == EventStatus.EN_ATTENTE_VALIDATION && validateur && !creator) {
+            actions.add("VALIDER");
+            actions.add("DEMANDER_MODIFICATIONS");
+            actions.add("REJETER");
+        }
+        if (status == EventStatus.A_CORRIGER && validateur && !creator) {
+            actions.add("REJETER");
+        }
+        if (estOperational && validateur) {
+            actions.add("AJOUTER_OBSERVATION");
+            actions.add("DEMANDER_DELEGATION");
+            actions.add("DELEGUER");
+        }
+        if (estOperational && creator && event.getObservationType() == ObservationType.DELEGATION_DEMANDEE
+                && !actions.contains("DELEGUER")) {
+            actions.add("DELEGUER");
+        }
+        if (status != EventStatus.EN_ATTENTE_VALIDATION
+                && status != EventStatus.ANNULER
+                && status != EventStatus.TERMINE
+                && status != EventStatus.REJETE) {
+            actions.add("MODIFIER");
+        }
+        if (status == EventStatus.REJETE && creator) {
+            actions.add("DUPLIQUER_EN_BROUILLON");
+        }
+
+        return actions;
     }
 
     private List<String> extractUniqueStructures(Event event) {
@@ -1459,20 +1830,42 @@ public class EventServiceImpl implements EventService {
     }
 
 
+    /**
+     * Transitions automatiques autorisées, basées sur la date/heure de l'événement
+     * (déclenchées par le timer front, pas par une action utilisateur). Toute autre
+     * transition de statut doit passer par une méthode métier dédiée (soumettre,
+     * valider, rejeter, ...) ci-dessus.
+     */
+    private static final Map<EventStatus, Set<EventStatus>> AUTO_TRANSITIONS_AUTORISEES = Map.of(
+            EventStatus.PLANIFIE, Set.of(EventStatus.EN_COURS, EventStatus.TERMINE),
+            EventStatus.EN_COURS, Set.of(EventStatus.TERMINE)
+    );
+
     @Override
     @Transactional
     public void updateStatusOnly(UUID id, String status) {
-        eventRepository.findById(id).ifPresent(event -> {
-            try {
-                EventStatus newStatus = EventStatus.valueOf(status);
-                // ✅ Pas de TransactionSynchronization → pas d'email
-                event.setStatus(newStatus);
-                event.setUpdatedAt(LocalDateTime.now());
-                eventRepository.save(event);
-                log.info("✅ Statut auto mis à jour : {} → {}", id, status);
-            } catch (IllegalArgumentException e) {
-                log.error("❌ Statut invalide : {}", status);
-            }
-        });
+        Event event = eventRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Événement non trouvé : " + id));
+        assertAccessible(event);
+
+        EventStatus newStatus;
+        try {
+            newStatus = EventStatus.valueOf(status);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Statut invalide : " + status);
+        }
+
+        Set<EventStatus> autorises = AUTO_TRANSITIONS_AUTORISEES.get(event.getStatus());
+        if (autorises == null || !autorises.contains(newStatus)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Transition automatique non autorisée : " + event.getStatus() + " → " + newStatus);
+        }
+
+        // ✅ Pas de TransactionSynchronization → pas d'email
+        event.setStatus(newStatus);
+        event.setUpdatedAt(LocalDateTime.now());
+        eventRepository.save(event);
+        log.info("✅ Statut auto mis à jour : {} → {}", id, status);
     }
 }

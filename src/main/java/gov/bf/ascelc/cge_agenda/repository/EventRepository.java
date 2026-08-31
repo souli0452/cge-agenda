@@ -116,4 +116,6 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     List<Event> findEventsByParticipantId(@Param("participantId") UUID participantId);
 
     List<Event> findByStartDateAndStatus(LocalDate startDate, EventStatus status);
+
+    List<Event> findByStatusAndEcheanceValidationIsNotNull(EventStatus status);
 }

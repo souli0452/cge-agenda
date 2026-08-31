@@ -147,9 +147,22 @@ public interface EventService {
     EventDto addObservation(UUID id, String observation);
 
     /**
+     * Demande de délégation CGE sur un événement PLANIFIE/EN_COURS : marque l'observation
+     * comme DELEGATION_DEMANDEE pour que le créateur voie l'action "Déléguer" plutôt
+     * qu'un formulaire de correction classique.
+     */
+    EventDto demanderDelegation(UUID id, String motif);
+
+    /**
      * Rédiger/modifier le compte-rendu officiel d'une réunion TERMINE.
      * Autorisé au CGE, à l'ADMIN, ou au créateur de l'événement.
      */
     EventDto saveCompteRendu(UUID id, String points, String decisions, String actions);
+
+    /**
+     * Dupliquer un événement REJETE en un nouveau brouillon (BROUILLON), pour permettre
+     * au créateur de le corriger et le resoumettre sans repartir de zéro.
+     */
+    EventDto dupliquerEnBrouillon(UUID id);
 
 }

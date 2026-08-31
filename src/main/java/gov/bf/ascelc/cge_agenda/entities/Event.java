@@ -3,6 +3,7 @@ package gov.bf.ascelc.cge_agenda.entities;
 import gov.bf.ascelc.cge_agenda.abstracts.AuditEntity;
 import gov.bf.ascelc.cge_agenda.enums.EventStatus;
 import gov.bf.ascelc.cge_agenda.enums.EventType;
+import gov.bf.ascelc.cge_agenda.enums.ObservationType;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -10,6 +11,7 @@ import lombok.experimental.SuperBuilder;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -19,6 +21,15 @@ import java.util.Set;
 @AllArgsConstructor
 @Table(name = "event")
 public class Event extends AuditEntity {
+
+    /**
+     * Espace agenda (chef) auquel appartient cet événement — fondement du cloisonnement.
+     * Nullable en base pour les événements historiques créés avant le passage au modèle
+     * multi-espaces (rattachés à un espace "legacy" lors de la migration).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "espace_id", foreignKey = @ForeignKey(name = "fk_event_espace"))
+    private Espace espace;
 
     @Column(name = "title", nullable = false)
     private String title;
@@ -62,6 +73,14 @@ public class Event extends AuditEntity {
     @Builder.Default
     private boolean deleted = false;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    @Builder.Default
+    private Long version = 0L;
+
+    @Column(name = "dupliquee_de_id")
+    private UUID dupliqueeDeId;
+
     // ==========================================
     // WORKFLOW DE VALIDATION CGE
     // ==========================================
@@ -73,6 +92,10 @@ public class Event extends AuditEntity {
 
     @Column(name = "change_suggestions", columnDefinition = "TEXT")
     private String changeSuggestions;
+
+    /** Liste lisible des champs modifiés lors de la dernière resoumission après correction. */
+    @Column(name = "champs_modifies", columnDefinition = "TEXT")
+    private String champsModifies;
 
     @Column(name = "creator_email")
     private String creatorEmail;
@@ -101,6 +124,22 @@ public class Event extends AuditEntity {
 
     @Column(name = "delegue_par_email")
     private String delegueParEmail;
+
+    /** null = en attente de réponse du délégué ; true = acceptée ; false = déclinée. */
+    @Column(name = "delegation_confirmee")
+    private Boolean delegationConfirmee;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "observation_type", length = 30)
+    private ObservationType observationType;
+
+    /** Horodatage de (re)soumission à validation — point de départ du calcul d'échéance. */
+    @Column(name = "soumis_le")
+    private java.time.LocalDateTime soumisLe;
+
+    /** Échéance calculée (heures ouvrables) pour la validation CGE, utilisée par les relances. */
+    @Column(name = "echeance_validation")
+    private java.time.LocalDateTime echeanceValidation;
 
     // ==========================================
     // COMPTE-RENDU DE RÉUNION (disponible une fois TERMINE)

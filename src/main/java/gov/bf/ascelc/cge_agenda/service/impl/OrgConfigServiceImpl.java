@@ -42,6 +42,8 @@ public class OrgConfigServiceImpl implements OrgConfigService {
         TEMPLATE_LABELS.put("event-update", "Mise à jour d'un événement");
         TEMPLATE_LABELS.put("reminder", "Rappel automatique");
         TEMPLATE_LABELS.put("delegation", "Délégation de participation");
+        TEMPLATE_LABELS.put("event-validated-creator", "Événement validé (créateur)");
+        TEMPLATE_LABELS.put("event-validated-protocole", "Événement validé (protocole)");
     }
 
     @Override
@@ -72,6 +74,10 @@ public class OrgConfigServiceImpl implements OrgConfigService {
         config.setSubjectEventUpdate(dto.getSubjectEventUpdate());
         config.setSubjectReminder(dto.getSubjectReminder());
         config.setSubjectDelegation(dto.getSubjectDelegation());
+        config.setSubjectEventValidatedCreator(dto.getSubjectEventValidatedCreator());
+        config.setSubjectEventValidatedProtocole(dto.getSubjectEventValidatedProtocole());
+        config.setHeureDebutOuvrable(dto.getHeureDebutOuvrable());
+        config.setHeureFinOuvrable(dto.getHeureFinOuvrable());
         config.setBodyInvitation(dto.getBodyInvitation());
         config.setBodyValidationRequest(dto.getBodyValidationRequest());
         config.setBodyNewDocument(dto.getBodyNewDocument());
@@ -83,6 +89,8 @@ public class OrgConfigServiceImpl implements OrgConfigService {
         config.setBodyEventUpdate(dto.getBodyEventUpdate());
         config.setBodyReminder(dto.getBodyReminder());
         config.setBodyDelegation(dto.getBodyDelegation());
+        config.setBodyEventValidatedCreator(dto.getBodyEventValidatedCreator());
+        config.setBodyEventValidatedProtocole(dto.getBodyEventValidatedProtocole());
         return toDto(orgConfigRepository.save(config));
     }
 
@@ -153,6 +161,8 @@ public class OrgConfigServiceImpl implements OrgConfigService {
             case "event-update" -> config.getSubjectEventUpdate();
             case "reminder" -> config.getSubjectReminder();
             case "delegation" -> config.getSubjectDelegation();
+            case "event-validated-creator" -> config.getSubjectEventValidatedCreator();
+            case "event-validated-protocole" -> config.getSubjectEventValidatedProtocole();
             default -> TEMPLATE_LABELS.get(templateKey);
         };
     }
@@ -170,6 +180,8 @@ public class OrgConfigServiceImpl implements OrgConfigService {
             case "event-update" -> config.getBodyEventUpdate();
             case "reminder" -> config.getBodyReminder();
             case "delegation" -> config.getBodyDelegation();
+            case "event-validated-creator" -> config.getBodyEventValidatedCreator();
+            case "event-validated-protocole" -> config.getBodyEventValidatedProtocole();
             default -> "";
         };
     }
@@ -200,6 +212,10 @@ public class OrgConfigServiceImpl implements OrgConfigService {
                                 .subjectEventUpdate("Modification : {evenement}")
                                 .subjectReminder("Rappel : {evenement}")
                                 .subjectDelegation("Délégation de participation : {evenement}")
+                                .subjectEventValidatedCreator("Votre événement a été validé : {evenement}")
+                                .subjectEventValidatedProtocole("Événement validé (protocole) : {evenement}")
+                                .heureDebutOuvrable(gov.bf.ascelc.cge_agenda.utils.BusinessHoursCalculator.DEFAULT_BUSINESS_START)
+                                .heureFinOuvrable(gov.bf.ascelc.cge_agenda.utils.BusinessHoursCalculator.DEFAULT_BUSINESS_END)
                                 .bodyInvitation("Vous avez été inscrit(e) à l'événement {evenement}. Veuillez en prendre note dans votre agenda.")
                                 .bodyValidationRequest("Un événement a été soumis et attend votre validation.")
                                 .bodyNewDocument("Un nouveau document a été ajouté à l'événement {evenement}. Vous pouvez le consulter et le télécharger dès maintenant.")
@@ -211,6 +227,8 @@ public class OrgConfigServiceImpl implements OrgConfigService {
                                 .bodyEventUpdate("L'événement {evenement} a été modifié. Veuillez consulter les nouvelles informations ci-dessous et mettre à jour votre agenda.")
                                 .bodyReminder("Rappel : l'événement {evenement} approche.")
                                 .bodyDelegation("Vous avez été désigné(e) pour représenter le CGE à l'événement suivant :")
+                                .bodyEventValidatedCreator("Votre événement {evenement} a été validé. Les invitations ont été envoyées aux participants.")
+                                .bodyEventValidatedProtocole("Un événement vient d'être validé et nécessite une prise en compte du protocole.")
                                 .build()
                 ));
     }
@@ -236,6 +254,10 @@ public class OrgConfigServiceImpl implements OrgConfigService {
                 .subjectEventUpdate(c.getSubjectEventUpdate())
                 .subjectReminder(c.getSubjectReminder())
                 .subjectDelegation(c.getSubjectDelegation())
+                .subjectEventValidatedCreator(c.getSubjectEventValidatedCreator())
+                .subjectEventValidatedProtocole(c.getSubjectEventValidatedProtocole())
+                .heureDebutOuvrable(c.getHeureDebutOuvrable())
+                .heureFinOuvrable(c.getHeureFinOuvrable())
                 .bodyInvitation(c.getBodyInvitation())
                 .bodyValidationRequest(c.getBodyValidationRequest())
                 .bodyNewDocument(c.getBodyNewDocument())
@@ -247,6 +269,8 @@ public class OrgConfigServiceImpl implements OrgConfigService {
                 .bodyEventUpdate(c.getBodyEventUpdate())
                 .bodyReminder(c.getBodyReminder())
                 .bodyDelegation(c.getBodyDelegation())
+                .bodyEventValidatedCreator(c.getBodyEventValidatedCreator())
+                .bodyEventValidatedProtocole(c.getBodyEventValidatedProtocole())
                 .updatedAt(c.getUpdatedAt())
                 .build();
     }

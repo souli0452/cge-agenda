@@ -7,6 +7,7 @@ import gov.bf.ascelc.cge_agenda.mapper.FileMapper;
 import gov.bf.ascelc.cge_agenda.repository.EventRepository;
 import gov.bf.ascelc.cge_agenda.repository.FileRepository;
 import gov.bf.ascelc.cge_agenda.service.EmailService;
+import gov.bf.ascelc.cge_agenda.service.EspaceService;
 import gov.bf.ascelc.cge_agenda.service.FileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -40,6 +44,34 @@ public class FileServiceImpl implements FileService {
     private final EventRepository eventRepository;
     private final FileMapper fileMapper;
     private final EmailService emailService;
+    private final EspaceService espaceService;
+
+    /**
+     * Un fichier appartient à l'espace de son événement — sans ce garde-fou, n'importe
+     * quel utilisateur authentifié avec un rôle métier peut télécharger/supprimer les
+     * documents d'un événement d'un autre espace en devinant/réutilisant l'UUID du
+     * fichier (IDOR). 404 plutôt que 403 pour ne pas confirmer l'existence du fichier.
+     */
+    private void assertAccessible(Event event) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        if (isAdmin) {
+            return;
+        }
+        String email = null;
+        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+            email = jwt.getClaim("email");
+            if (email == null) {
+                email = jwt.getClaim("preferred_username");
+            }
+        }
+        List<UUID> espacesAccessibles = espaceService.espacesAccessibles(email);
+        boolean accessible = event.getEspace() != null && espacesAccessibles.contains(event.getEspace().getId());
+        if (!accessible) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Fichier introuvable");
+        }
+    }
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -80,9 +112,9 @@ public class FileServiceImpl implements FileService {
     }
 
     private void validateUploadRequest(UUID eventId, MultipartFile file) {
-        if (!eventRepository.existsById(eventId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Événement introuvable");
-        }
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Événement introuvable"));
+        assertAccessible(event);
 
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Fichier vide ou manquant");
@@ -203,6 +235,7 @@ public class FileServiceImpl implements FileService {
         log.info("Téléchargement du fichier : {}", fileId);
         File file = fileRepository.findById(fileId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Fichier introuvable"));
+        assertAccessible(file.getEvent());
 
         try {
             Path filePath = Paths.get(file.getFilePath());
@@ -224,6 +257,7 @@ public class FileServiceImpl implements FileService {
         log.info(" Suppression du fichier : {}", fileId);
         File file = fileRepository.findById(fileId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Fichier introuvable"));
+        assertAccessible(file.getEvent());
 
         try {
             Path filePath = Paths.get(file.getFilePath());
@@ -243,9 +277,9 @@ public class FileServiceImpl implements FileService {
     @Override
     @Transactional(readOnly = true)
     public List<FileDto> getFilesByEvent(UUID eventId) {
-        if (!eventRepository.existsById(eventId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Événement introuvable");
-        }
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Événement introuvable"));
+        assertAccessible(event);
 
         List<File> files = fileRepository.findByEventId(eventId);
         log.info("{} fichiers trouvés pour l'événement {}", files.size(), eventId);
@@ -257,6 +291,7 @@ public class FileServiceImpl implements FileService {
     public FileDto getFileById(UUID fileId) {
         return fileRepository.findById(fileId)
                 .map(file -> {
+                    assertAccessible(file.getEvent());
                     log.info("🔍 Fichier trouvé : {}", file.getFileName());
                     return fileMapper.toDto(file);
                 })

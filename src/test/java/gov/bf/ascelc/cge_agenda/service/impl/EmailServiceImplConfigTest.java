@@ -58,7 +58,9 @@ class EmailServiceImplConfigTest {
                 mailSender, templateEngine,
                 mock(ParticipantEventRepository.class), participantRepository,
                 eventRepository, mock(ScheduleRepository.class), mock(FileRepository.class),
-                mock(Keycloak.class), emailOutboxService, orgConfigService
+                mock(Keycloak.class), emailOutboxService, orgConfigService,
+                mock(SignedTokenService.class),
+                mock(MembreEspaceRepository.class)
         );
 
         Event event = Event.builder().id(EVENT_ID).title("Réunion budget")

@@ -22,6 +22,9 @@ import java.util.List;
 @AllArgsConstructor
 public class EventDto extends AuditEntityDto {
 
+    /** Espace agenda (chef) auquel appartient/doit appartenir cet événement. */
+    private java.util.UUID espaceId;
+
     @NotBlank(message = "Le titre est obligatoire")
     @Size(max = 255)
     private String title;
@@ -61,6 +64,11 @@ public class EventDto extends AuditEntityDto {
     @NotNull(message = "Le type est obligatoire")
     private EventType type;
 
+    private java.util.UUID dupliqueeDeId;
+
+    @Builder.Default
+    private List<String> actionsDisponibles = new ArrayList<>();
+
     @Valid
     @Builder.Default
     private List<ScheduleDto> schedules = new ArrayList<>();
@@ -77,6 +85,7 @@ public class EventDto extends AuditEntityDto {
     // WORKFLOW DE VALIDATION CGE
     // ==========================================
     private String changeSuggestions;
+    private String champsModifies;
     private String rejectionReason;
     private String validationComment;
     private String creatorEmail;
@@ -88,6 +97,10 @@ public class EventDto extends AuditEntityDto {
     private boolean estDelegue;
     private java.time.LocalDateTime delegueDate;
     private String delegueParEmail;
+    private Boolean delegationConfirmee;
+    private gov.bf.ascelc.cge_agenda.enums.ObservationType observationType;
+    private java.time.LocalDateTime soumisLe;
+    private java.time.LocalDateTime echeanceValidation;
 
     private String compteRenduPoints;
     private String compteRenduDecisions;

@@ -38,6 +38,9 @@ public interface ParticipantEventRepository extends JpaRepository<ParticipantEve
     @Query("SELECT COUNT(DISTINCT pe.participant.id) FROM ParticipantEvent pe WHERE pe.event.id IN :eventIds")
     long countUniqueParticipantsByEventIds(@Param("eventIds") Collection<UUID> eventIds);
 
+    // Compte le nombre total d'inscriptions pour une liste d'événements (statistiques cloisonnées par espace)
+    long countByEventIdIn(Collection<UUID> eventIds);
+
     // Compte le nombre total d'inscriptions (toutes les lignes dans ParticipantEvent)
     long count();
 }

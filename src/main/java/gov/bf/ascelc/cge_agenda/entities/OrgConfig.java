@@ -73,6 +73,19 @@ public class OrgConfig extends AuditEntity {
     @Column(name = "subject_delegation")
     private String subjectDelegation;
 
+    @Column(name = "subject_event_validated_creator")
+    private String subjectEventValidatedCreator;
+
+    @Column(name = "subject_event_validated_protocole")
+    private String subjectEventValidatedProtocole;
+
+    /** Plage horaire ouvrée utilisée pour le calcul des échéances de validation et des relances. */
+    @Column(name = "heure_debut_ouvrable")
+    private java.time.LocalTime heureDebutOuvrable;
+
+    @Column(name = "heure_fin_ouvrable")
+    private java.time.LocalTime heureFinOuvrable;
+
     @Column(name = "body_invitation", columnDefinition = "TEXT")
     private String bodyInvitation;
 
@@ -105,4 +118,10 @@ public class OrgConfig extends AuditEntity {
 
     @Column(name = "body_delegation", columnDefinition = "TEXT")
     private String bodyDelegation;
+
+    @Column(name = "body_event_validated_creator", columnDefinition = "TEXT")
+    private String bodyEventValidatedCreator;
+
+    @Column(name = "body_event_validated_protocole", columnDefinition = "TEXT")
+    private String bodyEventValidatedProtocole;
 }

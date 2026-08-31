@@ -57,6 +57,11 @@ public class EmailServiceImpl implements EmailService {
     private final Keycloak keycloakAdminClient;
     private final EmailOutboxService emailOutboxService;
     private final OrgConfigService orgConfigService;
+    private final SignedTokenService signedTokenService;
+    private final gov.bf.ascelc.cge_agenda.repository.MembreEspaceRepository membreEspaceRepository;
+
+    @Value("${app.delegation.token-validity-days}")
+    private int delegationTokenValidityDays;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
@@ -328,9 +333,9 @@ public class EmailServiceImpl implements EmailService {
                 log.error("❌ Event introuvable : {}", eventId);
                 return;
             }
-            List<String> recipients = getCgeAndAdminEmails();
+            List<String> recipients = getValidateurEmails(event);
             if (recipients.isEmpty()) {
-                log.warn("⚠ Aucun destinataire CGE/ADMIN trouvé pour la demande de validation");
+                log.warn("⚠ Aucun destinataire trouvé pour la demande de validation");
                 return;
             }
             OrgConfigDto orgConfig = orgConfigService.getConfig();
@@ -426,9 +431,9 @@ public class EmailServiceImpl implements EmailService {
                 log.error("❌ Event introuvable : {}", eventId);
                 return;
             }
-            List<String> recipients = getCgeAndAdminEmails();
+            List<String> recipients = getValidateurEmails(event);
             if (recipients.isEmpty()) {
-                log.warn("⚠ Aucun destinataire CGE/ADMIN trouvé pour la re-soumission");
+                log.warn("⚠ Aucun destinataire trouvé pour la re-soumission");
                 return;
             }
             OrgConfigDto orgConfig = orgConfigService.getConfig();
@@ -467,8 +472,13 @@ public class EmailServiceImpl implements EmailService {
             OrgConfigDto orgConfig = orgConfigService.getConfig();
             Map<String, String> vars = buildVariables(event, null);
 
+            Duration validity = Duration.ofDays(delegationTokenValidityDays);
+            String token = signedTokenService.generate(event.getId(), event.getDelegueEmail(), validity);
+
             Context context = buildBaseContext();
             context.setVariable("event", event);
+            context.setVariable("acceptUrl", apiUrl + "/api/v1/cge-agenda/delegation/accepter/" + token);
+            context.setVariable("declineUrl", apiUrl + "/api/v1/cge-agenda/delegation/decliner/" + token);
             context.setVariable("customMessage", resolveBody(orgConfig.getBodyDelegation(),
                     "Vous avez été désigné(e) pour représenter le CGE à l'événement suivant :", vars));
             String htmlContent = templateEngine.process("email/delegation", context);
@@ -478,6 +488,220 @@ public class EmailServiceImpl implements EmailService {
             log.info("✅ Notification de délégation envoyée à {}", event.getDelegueEmail());
         } catch (Exception e) {
             log.error("❌ Erreur notification délégation eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // ÉVÉNEMENT VALIDÉ — COPIE CRÉATEUR
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendEventValidatedToCreator(UUID eventId) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null || event.getCreatorEmail() == null) {
+                log.warn("⚠ Impossible de notifier la validation (event ou créateur introuvable) : {}", eventId);
+                return;
+            }
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
+            Context context = buildBaseContext();
+            context.setVariable("event", event);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyEventValidatedCreator(),
+                    "Votre événement {evenement} a été validé. Les invitations ont été envoyées aux participants.", vars));
+            String htmlContent = templateEngine.process("email/event-validated-creator", context);
+            String subject = resolveSubject(orgConfig.getSubjectEventValidatedCreator(),
+                    "Votre événement a été validé : {evenement}", vars);
+            sendEmail(event.getCreatorEmail(), subject, htmlContent);
+            log.info("✅ Notification de validation envoyée au créateur {}", event.getCreatorEmail());
+        } catch (Exception e) {
+            log.error("❌ Erreur notification validation (créateur) eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // ÉVÉNEMENT VALIDÉ — CELLULE PROTOCOLE
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendEventValidatedToProtocole(UUID eventId) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null) {
+                log.error("❌ Event introuvable : {}", eventId);
+                return;
+            }
+            List<String> recipients = getProtocoleEmails(event);
+            if (recipients.isEmpty()) {
+                log.warn("⚠ Aucun destinataire protocole configuré/trouvé pour l'événement : {}", eventId);
+                return;
+            }
+            OrgConfigDto orgConfig = orgConfigService.getConfig();
+            Map<String, String> vars = buildVariables(event, null);
+
+            Context context = buildBaseContext();
+            context.setVariable("event", event);
+            context.setVariable("customMessage", resolveBody(orgConfig.getBodyEventValidatedProtocole(),
+                    "Un événement vient d'être validé et nécessite une prise en compte du protocole.", vars));
+            String htmlContent = templateEngine.process("email/event-validated-protocole", context);
+            String subject = resolveSubject(orgConfig.getSubjectEventValidatedProtocole(),
+                    "Événement validé (protocole) : {evenement}", vars);
+            for (String to : recipients) {
+                sendEmail(to, subject, htmlContent);
+            }
+            log.info("✅ Notification de validation envoyée au protocole ({} destinataire(s))", recipients.size());
+        } catch (Exception e) {
+            log.error("❌ Erreur notification validation (protocole) eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // DÉLÉGATION DÉCLINÉE
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendDelegationDeclined(UUID eventId) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null || event.getCreatorEmail() == null) {
+                log.warn("⚠ Impossible de notifier le refus de délégation (event ou créateur introuvable) : {}", eventId);
+                return;
+            }
+            Map<String, String> vars = buildVariables(event, null);
+
+            Context context = buildBaseContext();
+            context.setVariable("event", event);
+            context.setVariable("customMessage", "Le délégué sollicité a décliné la délégation pour l'événement {evenement}. Veuillez désigner un autre représentant si nécessaire."
+                    .replace("{evenement}", event.getTitle()));
+            String htmlContent = templateEngine.process("email/delegation-declined", context);
+            String subject = "Délégation déclinée : " + event.getTitle();
+            sendEmail(event.getCreatorEmail(), subject, htmlContent);
+            log.info("✅ Notification de refus de délégation envoyée à {}", event.getCreatorEmail());
+        } catch (Exception e) {
+            log.error("❌ Erreur notification refus délégation eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // RELANCE DE VALIDATION
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendRelanceValidation(UUID eventId, int pourcentage) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null) {
+                log.error("❌ Event introuvable : {}", eventId);
+                return;
+            }
+            List<String> recipients = getValidateurEmails(event);
+            if (recipients.isEmpty()) {
+                return;
+            }
+            String message = pourcentage >= 100
+                    ? "L'échéance de validation de l'événement {evenement} est atteinte. Une action est requise."
+                    : "L'événement {evenement} approche de son échéance de validation (" + pourcentage + "% du délai écoulé).";
+            sendRelanceEmail(event, recipients, message,
+                    (pourcentage >= 100 ? "Échéance atteinte" : "Relance") + " : {evenement}");
+            log.info("✅ Relance validation ({}%) envoyée → {} destinataire(s)", pourcentage, recipients.size());
+        } catch (Exception e) {
+            log.error("❌ Erreur relance validation eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendRelanceValidationEscalade(UUID eventId) {
+        try {
+            Event event = eventRepository.findById(eventId).orElse(null);
+            if (event == null) {
+                log.error("❌ Event introuvable : {}", eventId);
+                return;
+            }
+            List<String> recipients = new java.util.ArrayList<>(getValidateurEmails(event));
+            if (event.getCreatorEmail() != null) {
+                recipients.add(event.getCreatorEmail());
+            }
+            recipients.addAll(getProtocoleEmails(event));
+            if (recipients.isEmpty()) {
+                return;
+            }
+            sendRelanceEmail(event, recipients.stream().distinct().toList(),
+                    "L'événement {evenement} est toujours en attente de validation, bien au-delà de l'échéance prévue. Une action urgente est requise.",
+                    "Validation urgente en retard : {evenement}");
+            log.info("✅ Relance escalade envoyée → {} destinataire(s)", recipients.size());
+        } catch (Exception e) {
+            log.error("❌ Erreur relance escalade eventId={} : {}", eventId, e.getMessage());
+        }
+    }
+
+    private void sendRelanceEmail(Event event, List<String> recipients, String messageTemplate, String subjectTemplate) {
+        Map<String, String> vars = buildVariables(event, null);
+        Context context = buildBaseContext();
+        context.setVariable("event", event);
+        context.setVariable("customMessage", EmailTemplateVariables.substitute(messageTemplate, vars));
+        String htmlContent = templateEngine.process("email/relance-validation", context);
+        String subject = EmailTemplateVariables.substitute(subjectTemplate, vars);
+        for (String to : recipients) {
+            sendEmail(to, subject, htmlContent);
+        }
+    }
+
+    // ==========================================
+    // INVITATION GESTIONNAIRE D'ESPACE
+    // ==========================================
+    @Async
+    @Override
+    @Transactional(readOnly = true)
+    public void sendEspaceInvitation(UUID membreEspaceId) {
+        try {
+            var membre = membreEspaceRepository.findById(membreEspaceId).orElse(null);
+            if (membre == null) {
+                log.error("❌ MembreEspace introuvable : {}", membreEspaceId);
+                return;
+            }
+            String token = signedTokenService.generate(membreEspaceId, membre.getMembreEmail(),
+                    java.time.Duration.ofDays(delegationTokenValidityDays));
+
+            Context context = buildBaseContext();
+            context.setVariable("espaceNom", membre.getEspace().getNom());
+            context.setVariable("chefNom", membre.getEspace().getChefNom());
+            context.setVariable("roleLabel", membre.getRole() == gov.bf.ascelc.cge_agenda.enums.MembreEspaceRole.SECRETAIRE
+                    ? "secrétaire" : "protocole");
+            context.setVariable("rejoindreUrl", apiUrl + "/api/v1/cge-agenda/espace-membre/rejoindre/" + token);
+
+            String htmlContent = templateEngine.process("email/espace-membre-invitation", context);
+            String subject = "Vous êtes désigné(e) gestionnaire de l'espace " + membre.getEspace().getNom();
+            sendEmail(membre.getMembreEmail(), subject, htmlContent);
+            log.info("✅ Invitation espace envoyée à {}", membre.getMembreEmail());
+        } catch (Exception e) {
+            log.error("❌ Erreur invitation espace membreEspaceId={} : {}", membreEspaceId, e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // COMPTE CRÉÉ — IDENTIFIANTS
+    // ==========================================
+    @Async
+    @Override
+    public void sendAccountCreatedEmail(String email, String username, String temporaryPassword) {
+        try {
+            Context context = buildBaseContext();
+            context.setVariable("username", username);
+            context.setVariable("temporaryPassword", temporaryPassword);
+            context.setVariable("loginUrl", baseUrl);
+
+            String htmlContent = templateEngine.process("email/account-created", context);
+            sendEmail(email, "Votre compte CGE Agenda a été créé", htmlContent);
+            log.info("✅ Email d'identifiants envoyé à {}", email);
+        } catch (Exception e) {
+            log.error("❌ Erreur envoi email identifiants à {} : {}", email, e.getMessage());
         }
     }
 
@@ -565,6 +789,48 @@ public class EmailServiceImpl implements EmailService {
     }
 
     // ==========================================
+    // ALERTE TECHNIQUE (surveillance système)
+    // ==========================================
+    @Async
+    @Override
+    public void sendSystemAlert(String subject, String message) {
+        try {
+            List<String> adminEmails = getAdminEmails();
+            if (adminEmails.isEmpty()) {
+                log.warn("⚠ Aucun destinataire ADMIN pour l'alerte système : {}", subject);
+                return;
+            }
+
+            Context context = buildBaseContext();
+            context.setVariable("subject", subject);
+            context.setVariable("message", message);
+            String htmlContent = templateEngine.process("email/system-alert", context);
+
+            for (String email : adminEmails) {
+                sendEmail(email, "[Alerte système] " + subject, htmlContent);
+            }
+            log.info("✅ Alerte système envoyée → {} destinataire(s) : {}", adminEmails.size(), subject);
+        } catch (Exception e) {
+            log.error("❌ Erreur envoi alerte système : {}", e.getMessage());
+        }
+    }
+
+    private List<String> getAdminEmails() {
+        Set<String> emails = new HashSet<>();
+        try {
+            for (UserRepresentation user : keycloakAdminClient.realm(realmName)
+                    .roles().get("ADMIN").getUserMembers()) {
+                if (user.getEmail() != null && Boolean.TRUE.equals(user.isEnabled())) {
+                    emails.add(user.getEmail());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("⚠ Impossible de lister les membres du rôle ADMIN : {}", e.getMessage());
+        }
+        return emails.stream().toList();
+    }
+
+    // ==========================================
     // DESTINATAIRES CGE/ADMIN (Keycloak)
     // ==========================================
     private List<String> getCgeAndAdminEmails() {
@@ -582,6 +848,55 @@ public class EmailServiceImpl implements EmailService {
             }
         }
         return emails.stream().toList();
+    }
+
+    // ==========================================
+    // DESTINATAIRES VALIDATEUR (chef de l'espace, plus ADMIN en filet de sécurité)
+    // ==========================================
+    /**
+     * Remplace l'ancien "tous les CGE/ADMIN" : le validateur d'un événement est le chef
+     * de l'espace auquel il appartient (cloisonnement), ADMIN garde un accès de secours
+     * transverse. Repli sur getCgeAndAdminEmails() pour les événements legacy sans espace.
+     */
+    private List<String> getValidateurEmails(Event event) {
+        if (event.getEspace() == null) {
+            return getCgeAndAdminEmails();
+        }
+        Set<String> emails = new HashSet<>();
+        emails.add(event.getEspace().getChefEmail());
+        try {
+            for (UserRepresentation user : keycloakAdminClient.realm(realmName)
+                    .roles().get("ADMIN").getUserMembers()) {
+                if (user.getEmail() != null && Boolean.TRUE.equals(user.isEnabled())) {
+                    emails.add(user.getEmail());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("⚠ Impossible de lister les membres du rôle ADMIN : {}", e.getMessage());
+        }
+        return emails.stream().toList();
+    }
+
+    // ==========================================
+    // DESTINATAIRES PROTOCOLE
+    // ==========================================
+    /**
+     * Le protocole est désormais propre à chaque espace (MembreEspace, role=PROTOCOLE,
+     * statut=ACTIF) — plus une adresse globale unique. Cas CGE non codé en dur : CGE a
+     * simplement un membre PROTOCOLE affecté à son espace, comme n'importe quel chef en
+     * aurait un s'il en désignait un ; aucune comparaison de rôle ici.
+     */
+    private List<String> getProtocoleEmails(Event event) {
+        if (event.getEspace() == null) {
+            return List.of();
+        }
+        return membreEspaceRepository
+                .findByEspaceIdAndRoleAndStatut(event.getEspace().getId(),
+                        gov.bf.ascelc.cge_agenda.enums.MembreEspaceRole.PROTOCOLE,
+                        gov.bf.ascelc.cge_agenda.enums.MembreEspaceStatut.ACTIF)
+                .stream()
+                .map(gov.bf.ascelc.cge_agenda.entities.MembreEspace::getMembreEmail)
+                .toList();
     }
 
     // ==========================================

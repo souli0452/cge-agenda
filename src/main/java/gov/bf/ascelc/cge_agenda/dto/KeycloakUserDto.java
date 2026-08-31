@@ -21,4 +21,5 @@ public class KeycloakUserDto {
     private boolean emailVerified;
     private Long createdTimestamp;
     private List<String> realmRoles;
+    private boolean mfaRequired;
 }

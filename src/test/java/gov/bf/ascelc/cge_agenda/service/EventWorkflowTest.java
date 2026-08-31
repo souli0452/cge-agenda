@@ -1,11 +1,16 @@
 package gov.bf.ascelc.cge_agenda.service;
 
 import gov.bf.ascelc.cge_agenda.dto.EventDto;
+import gov.bf.ascelc.cge_agenda.dto.OrgConfigDto;
+import gov.bf.ascelc.cge_agenda.entities.Espace;
 import gov.bf.ascelc.cge_agenda.entities.Event;
 import gov.bf.ascelc.cge_agenda.enums.EventStatus;
 import gov.bf.ascelc.cge_agenda.mapper.EventMapper;
 import gov.bf.ascelc.cge_agenda.mapper.ParticipantMapper;
+import gov.bf.ascelc.cge_agenda.repository.EspaceRepository;
 import gov.bf.ascelc.cge_agenda.repository.EventRepository;
+import gov.bf.ascelc.cge_agenda.repository.EventTypeSlaRepository;
+import gov.bf.ascelc.cge_agenda.repository.JourFerieRepository;
 import gov.bf.ascelc.cge_agenda.repository.ParticipantEventRepository;
 import gov.bf.ascelc.cge_agenda.repository.ParticipantRepository;
 import gov.bf.ascelc.cge_agenda.repository.ScheduleRepository;
@@ -33,6 +38,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -48,6 +54,7 @@ class EventWorkflowTest {
     private EventRepository eventRepository;
     private EventMapper eventMapper;
     private EmailService emailService;
+    private EspaceService espaceService;
     private EventServiceImpl service;
 
     private static final UUID EVENT_ID = UUID.randomUUID();
@@ -62,11 +69,25 @@ class EventWorkflowTest {
         ParticipantEventRepository participantEventRepository = mock(ParticipantEventRepository.class);
         ParticipantMapper participantMapper = mock(ParticipantMapper.class);
         emailService = mock(EmailService.class);
+        AuditService auditService = mock(AuditService.class);
+        NotificationService notificationService = mock(NotificationService.class);
+        EventTypeSlaRepository eventTypeSlaRepository = mock(EventTypeSlaRepository.class);
+        JourFerieRepository jourFerieRepository = mock(JourFerieRepository.class);
+        OrgConfigService orgConfigService = mock(OrgConfigService.class);
+        EspaceRepository espaceRepository = mock(EspaceRepository.class);
+        espaceService = mock(EspaceService.class);
+
+        lenient().when(orgConfigService.getConfig()).thenReturn(OrgConfigDto.builder().build());
+        // Par défaut aucun filtre d'espace (voir estAccessible) : les tests qui authentifient
+        // explicitement un non-admin doivent stubber espacesAccessibles eux-mêmes si besoin.
+        lenient().when(espaceService.espacesAccessibles(anyString())).thenReturn(java.util.List.of());
 
         service = new EventServiceImpl(
                 eventRepository, eventMapper, scheduleRepository,
                 participantRepository, participantEventRepository,
-                participantMapper, emailService
+                participantMapper, emailService, auditService, notificationService,
+                eventTypeSlaRepository, jourFerieRepository, orgConfigService,
+                espaceRepository, espaceService
         );
 
         lenient().when(eventMapper.toDto(any(Event.class))).thenReturn(EventDto.builder().build());
@@ -75,6 +96,13 @@ class EventWorkflowTest {
         // TransactionSynchronizationManager — hors d'un vrai contexte Spring @Transactional,
         // cela nécessite d'activer manuellement la synchronisation de transaction.
         TransactionSynchronizationManager.initSynchronization();
+
+        // Par défaut : contexte ADMIN, pour que les tests de garde-fous de STATUT (le sujet
+        // de cette classe) ne soient pas bloqués par les vérifications d'autorisation/espace
+        // ajoutées depuis (assertEstValidateur, assertAccessible) — ces dernières sont testées
+        // séparément dans EventCloisonnementTest et les tests saveCompteRendu ci-dessous, qui
+        // authentifient explicitement un autre utilisateur.
+        authenticateAs("admin@ascelc.bf", "ADMIN");
     }
 
     @AfterEach
@@ -226,11 +254,12 @@ class EventWorkflowTest {
     }
 
     // ==========================================
-    // COMPTE-RENDU : uniquement TERMINE, et CGE/ADMIN ou créateur
+    // COMPTE-RENDU : uniquement TERMINE, et chef de l'espace/ADMIN ou créateur
     // ==========================================
     @Test
-    void saveCompteRendu_whenTermineAndCge_succeeds() {
+    void saveCompteRendu_whenTermineAndChefDeLEspace_succeeds() {
         Event event = eventWithStatus(EventStatus.TERMINE);
+        event.setEspace(Espace.builder().id(UUID.randomUUID()).chefEmail("cge@ascelc.bf").nom("CGE").build());
         mockFind(event);
         authenticateAs("cge@ascelc.bf", "CGE");
 
@@ -253,7 +282,7 @@ class EventWorkflowTest {
     }
 
     @Test
-    void saveCompteRendu_whenNeitherCgeNorCreator_forbidden() {
+    void saveCompteRendu_whenNeitherValidateurNorCreator_forbidden() {
         Event event = eventWithStatus(EventStatus.TERMINE);
         event.setCreatorEmail("createur@ascelc.bf");
         mockFind(event);

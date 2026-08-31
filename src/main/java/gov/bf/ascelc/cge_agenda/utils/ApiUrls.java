@@ -39,7 +39,9 @@ public class ApiUrls {
     public static final String REQUEST_CHANGES_EVENT = "/request-changes/{id}";
     public static final String DELEGATE_EVENT        = "/delegate/{id}";
     public static final String ADD_OBSERVATION_EVENT = "/{id}/observation";
+    public static final String DEMANDER_DELEGATION_EVENT = "/{id}/demander-delegation";
     public static final String SAVE_COMPTE_RENDU     = "/{id}/compte-rendu";
+    public static final String DUPLICATE_EVENT       = "/{id}/dupliquer";
 
     // Recherche et calendrier
     public static final String SEARCH_EVENTS = "/search";
@@ -129,6 +131,12 @@ public class ApiUrls {
     public static final String ADMIN_SCHEDULER            = "/scheduler";
     public static final String ADMIN_SCHEDULER_RUN_NOW     = "/scheduler/run-now";
 
+    // SLA de validation par type d'événement + jours fériés (calcul des échéances)
+    public static final String ADMIN_SLA            = "/sla";
+    public static final String ADMIN_SLA_BY_TYPE    = "/sla/{eventType}";
+    public static final String ADMIN_JOURS_FERIES    = "/jours-feries";
+    public static final String ADMIN_JOUR_FERIE_BY_ID = "/jours-feries/{id}";
+
     // Sauvegardes de la base de données
     public static final String ADMIN_BACKUP                = "/backup";
     public static final String ADMIN_BACKUP_CONFIG          = "/backup/config";
@@ -143,4 +151,51 @@ public class ApiUrls {
     /* SETTINGS URLs (préférences utilisateur)    */
     /* ========================================== */
     public static final String SETTINGS_ROOT_URL = CGE_AGENDA_ROOT_URL + "/settings";
+
+    /* ========================================== */
+    /* NOTIFICATION URLs                          */
+    /* ========================================== */
+    public static final String NOTIFICATION_ROOT_URL = CGE_AGENDA_ROOT_URL + "/notifications";
+
+    public static final String NOTIFICATION_COUNT_NON_LUES = "/count-non-lues";
+    public static final String NOTIFICATION_MARK_LUE       = "/{id}/lue";
+    public static final String NOTIFICATION_MARK_ALL_LUES  = "/marquer-toutes-lues";
+
+    /* ========================================== */
+    /* DELEGATION URLs (liens signés, publics)    */
+    /* ========================================== */
+    public static final String DELEGATION_ROOT_URL = CGE_AGENDA_ROOT_URL + "/delegation";
+
+    public static final String DELEGATION_ACCEPTER = "/accepter/{token}";
+    public static final String DELEGATION_DECLINER = "/decliner/{token}";
+
+    /* ========================================== */
+    /* ME (utilisateur courant)                   */
+    /* ========================================== */
+    public static final String ME_ROOT_URL = CGE_AGENDA_ROOT_URL + "/me";
+    public static final String ME_PERMISSIONS = "/permissions";
+
+    /* ========================================== */
+    /* PERMISSIONS (admin — rôles dynamiques)     */
+    /* ========================================== */
+    public static final String ADMIN_PERMISSIONS_CATALOG   = "/permissions/catalogue";
+    public static final String ADMIN_PERMISSIONS_ROLES     = "/permissions/roles";
+    public static final String ADMIN_PERMISSIONS_BY_ROLE   = "/permissions/roles/{roleName}";
+
+    /* ========================================== */
+    /* ESPACES (admin — création) + MEMBRES       */
+    /* ========================================== */
+    public static final String ESPACE_ROOT_URL = CGE_AGENDA_ROOT_URL + "/espaces";
+    public static final String ADMIN_ESPACES = "/espaces";
+    public static final String ADMIN_ESPACE_BY_ID = "/espaces/{id}";
+
+    public static final String ESPACE_MEMBRES = "/{espaceId}/membres";
+    public static final String ESPACE_MEMBRE_BY_ID = "/{espaceId}/membres/{membreEspaceId}";
+    public static final String ESPACE_MES_ESPACES = "/mes-espaces";
+
+    /* ========================================== */
+    /* ESPACE-MEMBRE (lien signé, public)         */
+    /* ========================================== */
+    public static final String ESPACE_MEMBRE_ROOT_URL = CGE_AGENDA_ROOT_URL + "/espace-membre";
+    public static final String ESPACE_MEMBRE_REJOINDRE = "/rejoindre/{token}";
 }

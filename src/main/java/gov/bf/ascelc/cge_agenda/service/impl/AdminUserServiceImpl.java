@@ -4,6 +4,7 @@ import gov.bf.ascelc.cge_agenda.dto.KcRoleDto;
 import gov.bf.ascelc.cge_agenda.dto.KeycloakUserDto;
 import gov.bf.ascelc.cge_agenda.dto.UserPayloadDto;
 import gov.bf.ascelc.cge_agenda.service.AdminUserService;
+import gov.bf.ascelc.cge_agenda.service.EmailService;
 import jakarta.ws.rs.core.Response;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,9 +31,13 @@ import java.util.List;
 public class AdminUserServiceImpl implements AdminUserService {
 
     private final Keycloak keycloakAdminClient;
+    private final EmailService emailService;
 
     @Value("${keycloak.admin.realm}")
     private String realmName;
+
+    @Value("${app.user.default-password:Asce@2026}")
+    private String defaultPassword;
 
     private RealmResource realm() {
         return keycloakAdminClient.realm(realmName);
@@ -62,11 +67,14 @@ public class AdminUserServiceImpl implements AdminUserService {
         user.setEnabled(payload.isEnabled());
         user.setEmailVerified(true);
 
-        boolean hasPassword = payload.getPassword() != null && !payload.getPassword().isBlank();
         // Le nom/prénom sont déjà renseignés par l'admin : on ne force que le
         // changement du mot de passe temporaire au premier login, pas les actions
         // par défaut du realm (qui incluent "Update Profile" sinon).
-        user.setRequiredActions(hasPassword ? List.of("UPDATE_PASSWORD") : List.of());
+        List<String> requiredActions = new ArrayList<>(List.of("UPDATE_PASSWORD"));
+        if (payload.isRequireMfa()) {
+            requiredActions.add("CONFIGURE_TOTP");
+        }
+        user.setRequiredActions(requiredActions);
 
         Response response = realm().users().create(user);
         if (response.getStatus() != 201) {
@@ -77,12 +85,18 @@ public class AdminUserServiceImpl implements AdminUserService {
         }
         String userId = CreatedResponseUtil.getCreatedId(response);
 
-        if (hasPassword) {
-            setPassword(userId, payload.getPassword(), true);
-        }
+        // Toujours un mot de passe temporaire (saisi par l'admin ou, à défaut, une
+        // valeur par défaut) — l'utilisateur le change obligatoirement à la première
+        // connexion (UPDATE_PASSWORD ci-dessus), et le reçoit par email ci-dessous.
+        String motDePasse = (payload.getPassword() != null && !payload.getPassword().isBlank())
+                ? payload.getPassword() : defaultPassword;
+        setPassword(userId, motDePasse, true);
+
         if (payload.getRole() != null && !payload.getRole().isBlank()) {
             assignRole(userId, payload.getRole());
         }
+
+        emailService.sendAccountCreatedEmail(payload.getEmail(), payload.getUsername(), motDePasse);
 
         return toDto(realm().users().get(userId).toRepresentation());
     }
@@ -97,6 +111,15 @@ public class AdminUserServiceImpl implements AdminUserService {
         user.setFirstName(payload.getFirstName());
         user.setLastName(payload.getLastName());
         user.setEnabled(payload.isEnabled());
+
+        List<String> requiredActions = user.getRequiredActions() != null
+                ? new ArrayList<>(user.getRequiredActions()) : new ArrayList<>();
+        if (payload.isRequireMfa() && !requiredActions.contains("CONFIGURE_TOTP")) {
+            requiredActions.add("CONFIGURE_TOTP");
+        } else if (!payload.isRequireMfa()) {
+            requiredActions.remove("CONFIGURE_TOTP");
+        }
+        user.setRequiredActions(requiredActions);
 
         userResource.update(user);
 
@@ -254,6 +277,7 @@ public class AdminUserServiceImpl implements AdminUserService {
                 .emailVerified(Boolean.TRUE.equals(user.isEmailVerified()))
                 .createdTimestamp(user.getCreatedTimestamp())
                 .realmRoles(realmRoles)
+                .mfaRequired(user.getRequiredActions() != null && user.getRequiredActions().contains("CONFIGURE_TOTP"))
                 .build();
     }
 }

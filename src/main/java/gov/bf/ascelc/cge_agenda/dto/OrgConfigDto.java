@@ -37,6 +37,10 @@ public class OrgConfigDto {
     private String subjectEventUpdate;
     private String subjectReminder;
     private String subjectDelegation;
+    private String subjectEventValidatedCreator;
+    private String subjectEventValidatedProtocole;
+    private java.time.LocalTime heureDebutOuvrable;
+    private java.time.LocalTime heureFinOuvrable;
 
     private String bodyInvitation;
     private String bodyValidationRequest;
@@ -49,6 +53,8 @@ public class OrgConfigDto {
     private String bodyEventUpdate;
     private String bodyReminder;
     private String bodyDelegation;
+    private String bodyEventValidatedCreator;
+    private String bodyEventValidatedProtocole;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd' 'HH:mm:ss")
     private LocalDateTime updatedAt;

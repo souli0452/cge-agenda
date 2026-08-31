@@ -26,6 +26,9 @@ public interface EventMapper {
     @Mapping(source = "schedules", target = "schedules")
     @Mapping(source = "participantEvents", target = "participants", qualifiedByName = "participantEventsToParticipants")
     @Mapping(source = "files", target = "files")
+    @Mapping(target = "structures", ignore = true)
+    @Mapping(target = "actionsDisponibles", ignore = true)
+    @Mapping(source = "espace.id", target = "espaceId")
     EventDto toDto(Event event);
 
     // ==========================================
@@ -70,6 +73,7 @@ public interface EventMapper {
     @Mapping(target = "validationComment", ignore = true)
     @Mapping(target = "rejectionReason", ignore = true)
     @Mapping(target = "changeSuggestions", ignore = true)
+    @Mapping(target = "champsModifies", ignore = true)
     @Mapping(target = "creatorEmail", ignore = true)
     @Mapping(target = "creatorUsername", ignore = true)
     @Mapping(target = "creatorRole", ignore = true)
@@ -79,11 +83,18 @@ public interface EventMapper {
     @Mapping(target = "estDelegue", ignore = true)
     @Mapping(target = "delegueDate", ignore = true)
     @Mapping(target = "delegueParEmail", ignore = true)
+    @Mapping(target = "delegationConfirmee", ignore = true)
+    @Mapping(target = "observationType", ignore = true)
+    @Mapping(target = "soumisLe", ignore = true)
+    @Mapping(target = "echeanceValidation", ignore = true)
     @Mapping(target = "compteRenduPoints", ignore = true)
     @Mapping(target = "compteRenduDecisions", ignore = true)
     @Mapping(target = "compteRenduActions", ignore = true)
     @Mapping(target = "compteRenduRedigePar", ignore = true)
     @Mapping(target = "compteRenduDate", ignore = true)
+    @Mapping(target = "deleted", ignore = true)
+    @Mapping(target = "version", ignore = true)
+    @Mapping(target = "espace", ignore = true)
     Event toEntity(EventDto eventDto);
 
     // ==========================================
@@ -112,6 +123,7 @@ public interface EventMapper {
     @Mapping(target = "validationComment", ignore = true)
     @Mapping(target = "rejectionReason", ignore = true)
     @Mapping(target = "changeSuggestions", ignore = true)
+    @Mapping(target = "champsModifies", ignore = true)
     @Mapping(target = "creatorEmail", ignore = true)
     @Mapping(target = "creatorUsername", ignore = true)
     @Mapping(target = "creatorRole", ignore = true)
@@ -121,10 +133,17 @@ public interface EventMapper {
     @Mapping(target = "estDelegue", ignore = true)
     @Mapping(target = "delegueDate", ignore = true)
     @Mapping(target = "delegueParEmail", ignore = true)
+    @Mapping(target = "delegationConfirmee", ignore = true)
+    @Mapping(target = "observationType", ignore = true)
+    @Mapping(target = "soumisLe", ignore = true)
+    @Mapping(target = "echeanceValidation", ignore = true)
     @Mapping(target = "compteRenduPoints", ignore = true)
     @Mapping(target = "compteRenduDecisions", ignore = true)
     @Mapping(target = "compteRenduActions", ignore = true)
     @Mapping(target = "compteRenduRedigePar", ignore = true)
     @Mapping(target = "compteRenduDate", ignore = true)
+    @Mapping(target = "deleted", ignore = true)
+    @Mapping(target = "version", ignore = true)
+    @Mapping(target = "espace", ignore = true)
     void updateEntityFromDto(EventDto eventDto, @MappingTarget Event event);
 }
