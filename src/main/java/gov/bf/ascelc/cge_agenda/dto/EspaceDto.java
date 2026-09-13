@@ -20,4 +20,5 @@ public class EspaceDto {
     private String chefEmail;
     private String chefNom;
     private LocalDateTime createdAt;
+    private boolean actif;
 }

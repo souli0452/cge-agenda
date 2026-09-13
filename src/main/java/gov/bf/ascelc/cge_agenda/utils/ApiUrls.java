@@ -188,6 +188,7 @@ public class ApiUrls {
     public static final String ESPACE_ROOT_URL = CGE_AGENDA_ROOT_URL + "/espaces";
     public static final String ADMIN_ESPACES = "/espaces";
     public static final String ADMIN_ESPACE_BY_ID = "/espaces/{id}";
+    public static final String ADMIN_ESPACE_STATUS = "/espaces/{id}/status";
 
     public static final String ESPACE_MEMBRES = "/{espaceId}/membres";
     public static final String ESPACE_MEMBRE_BY_ID = "/{espaceId}/membres/{membreEspaceId}";

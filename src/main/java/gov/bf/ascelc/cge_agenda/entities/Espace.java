@@ -39,4 +39,8 @@ public class Espace {
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "actif", nullable = false)
+    @Builder.Default
+    private boolean actif = true;
 }

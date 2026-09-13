@@ -11,7 +11,14 @@ public interface EspaceService {
 
     EspaceDto create(String nom, String chefEmail, String chefNom);
 
-    void delete(UUID id);
+    EspaceDto update(UUID id, String nom, String chefEmail, String chefNom);
+
+    /**
+     * Désactive/réactive un espace. Un espace désactivé ne peut plus accueillir de nouveaux
+     * événements (voir peutCreerDans) mais conserve tout son historique — pas de suppression
+     * physique possible, pour ne jamais perdre les données qui y sont rattachées.
+     */
+    void setActif(UUID id, boolean actif);
 
     /**
      * Espaces accessibles à l'email donné : celui qu'il possède (le cas échéant) +

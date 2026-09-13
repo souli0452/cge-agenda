@@ -11,4 +11,5 @@ import java.util.UUID;
 public interface EspaceRepository extends JpaRepository<Espace, UUID> {
     Optional<Espace> findByChefEmailIgnoreCase(String chefEmail);
     boolean existsByChefEmailIgnoreCase(String chefEmail);
+    boolean existsByChefEmailIgnoreCaseAndIdNot(String chefEmail, UUID id);
 }

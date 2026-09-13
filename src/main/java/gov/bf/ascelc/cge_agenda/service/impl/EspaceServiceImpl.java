@@ -51,11 +51,26 @@ public class EspaceServiceImpl implements EspaceService {
 
     @Override
     @Transactional
-    public void delete(UUID id) {
-        if (!espaceRepository.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Espace non trouvé : " + id);
+    public EspaceDto update(UUID id, String nom, String chefEmail, String chefNom) {
+        Espace espace = espaceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Espace non trouvé : " + id));
+        if (espaceRepository.existsByChefEmailIgnoreCaseAndIdNot(chefEmail, id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Un espace existe déjà pour ce chef : " + chefEmail);
         }
-        espaceRepository.deleteById(id);
+        espace.setNom(nom);
+        espace.setChefEmail(chefEmail);
+        espace.setChefNom(chefNom);
+        return toDto(espaceRepository.save(espace));
+    }
+
+    @Override
+    @Transactional
+    public void setActif(UUID id, boolean actif) {
+        Espace espace = espaceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Espace non trouvé : " + id));
+        espace.setActif(actif);
+        espaceRepository.save(espace);
     }
 
     @Override
@@ -86,6 +101,10 @@ public class EspaceServiceImpl implements EspaceService {
     @Transactional(readOnly = true)
     public boolean peutCreerDans(UUID espaceId, String email) {
         if (email == null) {
+            return false;
+        }
+        boolean espaceActif = espaceRepository.findById(espaceId).map(Espace::isActif).orElse(false);
+        if (!espaceActif) {
             return false;
         }
         if (estProprietaire(espaceId, email)) {
@@ -122,6 +141,7 @@ public class EspaceServiceImpl implements EspaceService {
                 .chefEmail(e.getChefEmail())
                 .chefNom(e.getChefNom())
                 .createdAt(e.getCreatedAt())
+                .actif(e.isActif())
                 .build();
     }
 }

@@ -36,9 +36,16 @@ public class EspaceController {
         return new ResponseEntity<>(espaceService.create(req.getNom(), req.getChefEmail(), req.getChefNom()), HttpStatus.CREATED);
     }
 
-    @DeleteMapping(ADMIN_ESPACE_BY_ID)
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        espaceService.delete(id);
+    @PutMapping(ADMIN_ESPACE_BY_ID)
+    public ResponseEntity<EspaceDto> update(@PathVariable UUID id,
+                                             @org.springframework.web.bind.annotation.RequestBody CreateEspaceRequest req) {
+        return ResponseEntity.ok(espaceService.update(id, req.getNom(), req.getChefEmail(), req.getChefNom()));
+    }
+
+    @PatchMapping(ADMIN_ESPACE_STATUS)
+    public ResponseEntity<Void> setStatus(@PathVariable UUID id,
+                                           @org.springframework.web.bind.annotation.RequestBody java.util.Map<String, Boolean> body) {
+        espaceService.setActif(id, Boolean.TRUE.equals(body.get("actif")));
         return ResponseEntity.noContent().build();
     }
 
