@@ -2,18 +2,36 @@
 # A executer TOI-MEME dans PowerShell (pas via l'assistant), depuis n'importe
 # quelle machine ayant acces a auth.asce-lc.bf et agenda.asce-lc.bf en HTTPS.
 #
-# Usage : .\creer-espaces-departements.ps1
-# Le mot de passe est saisi de facon masquee, jamais affiche ni transmis ailleurs.
+# Usage interactif (recommande - mot de passe masque, pas dans l'historique) :
+#   .\creer-espaces-departements.ps1
+#
+# Usage non interactif (le mot de passe reste alors visible dans l'historique
+# PowerShell et dans la liste des processus le temps de l'execution) :
+#   .\creer-espaces-departements.ps1 -Username admin.cge -Password "MonMotDePasse"
+
+param(
+    [string]$Username,
+    [string]$Password
+)
 
 $AuthUrl   = "https://auth.asce-lc.bf/realms/asce-lc-realm/protocol/openid-connect/token"
 $ApiUrl    = "https://agenda.asce-lc.bf/api/v1/cge-agenda/admin/espaces"
 $ClientId  = "agenda-cge"
 
-$KcUser = Read-Host "Identifiant Keycloak (compte ADMIN)"
-$KcPassSecure = Read-Host "Mot de passe" -AsSecureString
-$KcPass = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($KcPassSecure)
-)
+if ($Username) {
+    $KcUser = $Username
+} else {
+    $KcUser = Read-Host "Identifiant Keycloak (compte ADMIN)"
+}
+
+if ($Password) {
+    $KcPass = $Password
+} else {
+    $KcPassSecure = Read-Host "Mot de passe" -AsSecureString
+    $KcPass = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($KcPassSecure)
+    )
+}
 
 $tokenBody = @{
     grant_type = "password"
