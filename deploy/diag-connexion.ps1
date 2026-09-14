@@ -15,5 +15,12 @@ try {
     Write-Host "SUCCES : token recu." -ForegroundColor Green
 } catch {
     Write-Host "ECHEC :" -ForegroundColor Red
-    Write-Host $_.ErrorDetails.Message
+    Write-Host ("Type exception : " + $_.Exception.GetType().FullName)
+    Write-Host ("Message : " + $_.Exception.Message)
+    if ($_.Exception.Response) {
+        Write-Host ("Statut HTTP : " + [int]$_.Exception.Response.StatusCode)
+    }
+    if ($_.ErrorDetails.Message) {
+        Write-Host ("Corps reponse : " + $_.ErrorDetails.Message)
+    }
 }
