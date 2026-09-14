@@ -14,6 +14,10 @@ param(
     [string]$Password
 )
 
+# .NET Framework (Windows PowerShell 5.1) ne propose parfois que TLS 1.0/1.1 par
+# defaut, que la plupart des serveurs web modernes refusent desormais.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $AuthUrl   = "https://auth.asce-lc.bf/realms/asce-lc-realm/protocol/openid-connect/token"
 $ApiUrl    = "https://agenda.asce-lc.bf/api/v1/cge-agenda/admin/espaces"
 $ClientId  = "agenda-cge"
@@ -44,7 +48,9 @@ $tokenBody = @{
 try {
     $tokenResp = Invoke-RestMethod -Uri $AuthUrl -Method Post -Body $tokenBody -ContentType "application/x-www-form-urlencoded"
 } catch {
-    Write-Host "Echec de connexion : identifiant/mot de passe incorrect, ou compte sans droit ADMIN." -ForegroundColor Red
+    Write-Host "Echec de connexion (identifiant/mot de passe incorrect, compte sans droit ADMIN, ou probleme reseau) :" -ForegroundColor Red
+    Write-Host ("  " + $_.Exception.Message)
+    if ($_.ErrorDetails.Message) { Write-Host ("  " + $_.ErrorDetails.Message) }
     exit 1
 }
 

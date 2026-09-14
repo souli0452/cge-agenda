@@ -1,6 +1,10 @@
 # Diagnostic de connexion Keycloak - affiche l'erreur reelle sans rien modifier.
 # Usage : powershell -ExecutionPolicy Bypass -File .\diag-connexion.ps1
 
+# .NET Framework (Windows PowerShell 5.1) ne propose parfois que TLS 1.0/1.1 par
+# defaut, que la plupart des serveurs web modernes refusent desormais.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $user = Read-Host "Identifiant"
 $passSecure = Read-Host "Mot de passe" -AsSecureString
 $pass = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
