@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.keycloak.admin.client.CreatedResponseUtil;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RealmResource;
+import org.keycloak.admin.client.resource.RoleScopeResource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
@@ -78,10 +79,12 @@ public class AdminUserServiceImpl implements AdminUserService {
 
         Response response = realm().users().create(user);
         if (response.getStatus() != 201) {
-            throw new ResponseStatusException(
-                    HttpStatus.valueOf(response.getStatus()),
-                    "Impossible de créer l'utilisateur dans Keycloak"
-            );
+            HttpStatus status = HttpStatus.valueOf(response.getStatus());
+            String message = status == HttpStatus.CONFLICT
+                    ? "Un utilisateur avec ce nom d'utilisateur ou cet email existe déjà"
+                    : "Impossible de créer l'utilisateur (" + response.getStatus() + ")";
+            response.close();
+            throw new ResponseStatusException(status, message);
         }
         String userId = CreatedResponseUtil.getCreatedId(response);
 
@@ -124,7 +127,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         userResource.update(user);
 
         if (payload.getRole() != null && !payload.getRole().isBlank()) {
-            assignRole(id, payload.getRole());
+            replaceBusinessRole(id, payload.getRole());
         }
 
         return toDto(userResource.toRepresentation());
@@ -221,6 +224,42 @@ public class AdminUserServiceImpl implements AdminUserService {
         return getUserResourceOrThrow(userId).roles().realmLevel().listAll().stream()
                 .map(RoleRepresentation::getName)
                 .toList();
+    }
+
+    /**
+     * L'écran d'édition ne propose qu'un seul rôle métier à la fois (un simple
+     * <select>) : changer ce rôle doit REMPLACER l'ancien, pas s'ajouter à côté.
+     * Sans ça, l'utilisateur accumule les rôles au fil des modifications et
+     * l'affichage peut continuer à montrer un ancien rôle (le premier trouvé,
+     * sans ordre garanti côté Keycloak).
+     */
+    private void replaceBusinessRole(String userId, String newRole) {
+        RoleScopeResource roleScope = getUserResourceOrThrow(userId).roles().realmLevel();
+        List<RoleRepresentation> currentRoles = roleScope.listAll();
+
+        List<RoleRepresentation> toRemove = currentRoles.stream()
+                .filter(r -> !isTechnicalRole(r.getName()))
+                .filter(r -> !r.getName().equals(newRole))
+                .toList();
+        if (!toRemove.isEmpty()) {
+            roleScope.remove(toRemove);
+        }
+
+        boolean alreadyAssigned = currentRoles.stream().anyMatch(r -> r.getName().equals(newRole));
+        if (!alreadyAssigned) {
+            assignRole(userId, newRole);
+        }
+    }
+
+    /**
+     * Rôles internes créés automatiquement par Keycloak (jamais assignés
+     * volontairement par un admin) : à ignorer lors du remplacement du rôle
+     * métier d'un utilisateur.
+     */
+    private boolean isTechnicalRole(String role) {
+        return "offline_access".equals(role) ||
+               "uma_authorization".equals(role) ||
+               role.startsWith("default-roles-");
     }
 
     @Override

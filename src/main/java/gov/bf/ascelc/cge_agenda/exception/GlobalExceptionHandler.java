@@ -191,6 +191,29 @@ public class GlobalExceptionHandler {
     }
 
     // ==========================================
+    // REJET PAR KEYCLOAK (mot de passe, requête invalide)
+    // ==========================================
+    /**
+     * Le client admin Keycloak leve cette exception (sans corps exploitable de
+     * facon fiable) quand une requete est rejetee en 400 - le cas le plus
+     * frequent en pratique est un mot de passe qui ne respecte pas la
+     * politique de securite du realm (resetPassword/setPassword). Sans ce
+     * handler, l'appelant recoit un 500 generique qui masque totalement la
+     * vraie cause.
+     */
+    @ExceptionHandler(jakarta.ws.rs.BadRequestException.class)
+    public ResponseEntity<ErrorResponse> handleKeycloakBadRequest(jakarta.ws.rs.BadRequestException ex) {
+        log.warn("⚠ Requete rejetee par Keycloak : {}", ex.getMessage());
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                "Demande rejetée : vérifiez que le mot de passe respecte la politique de sécurité "
+                        + "(8 caractères minimum, une majuscule, un chiffre et un caractère spécial).",
+                LocalDateTime.now()
+        );
+        return ResponseEntity.badRequest().body(error);
+    }
+
+    // ==========================================
     // EXCEPTION GÉNÉRIQUE (Catch-all)
     // ==========================================
     @ExceptionHandler(Exception.class)
