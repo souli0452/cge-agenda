@@ -1718,12 +1718,29 @@ public class EventServiceImpl implements EventService {
         };
     }
 
+    private static final byte[] UTF8_BOM = new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
+
+    /**
+     * Excel (et notre propre modele telechargeable) sauvegarde les CSV avec un
+     * BOM UTF-8 en tete pour que les accents s'affichent correctement -
+     * sinon, sans ce nettoyage, il reste colle au nom de la premiere colonne
+     * ("Nom" devient invisible-BOM+"Nom") et la recherche de colonne par nom
+     * echoue silencieusement en "Mapping for Nom not found".
+     */
+    private byte[] stripUtf8Bom(byte[] content) {
+        if (content.length >= 3
+                && content[0] == UTF8_BOM[0] && content[1] == UTF8_BOM[1] && content[2] == UTF8_BOM[2]) {
+            return java.util.Arrays.copyOfRange(content, 3, content.length);
+        }
+        return content;
+    }
+
     private List<ParticipantDto> parseCSV(byte[] content) throws Exception {
         List<ParticipantDto> list = new ArrayList<>();
         try (CSVParser p = CSVFormat.DEFAULT.builder()
                 .setHeader().setSkipHeaderRecord(true).build()
                 .parse(new InputStreamReader(
-                        new ByteArrayInputStream(content), StandardCharsets.UTF_8))) {
+                        new ByteArrayInputStream(stripUtf8Bom(content)), StandardCharsets.UTF_8))) {
             for (CSVRecord r : p) {
                 list.add(ParticipantDto.builder()
                         .lastName(r.get("Nom"))
@@ -1732,6 +1749,7 @@ public class EventServiceImpl implements EventService {
                         .phoneNumber(r.get("Téléphone"))
                         .structure(r.get("Structure"))
                         .jobTitle(r.get("Fonction"))
+                        .participantType(gov.bf.ascelc.cge_agenda.enums.ParticipantType.EXTERNE)
                         .build());
             }
         }
@@ -1753,6 +1771,7 @@ public class EventServiceImpl implements EventService {
                             .phoneNumber(getCellValue(row.getCell(3)))
                             .structure(getCellValue(row.getCell(4)))
                             .jobTitle(getCellValue(row.getCell(5)))
+                            .participantType(gov.bf.ascelc.cge_agenda.enums.ParticipantType.EXTERNE)
                             .build());
                 }
             }
