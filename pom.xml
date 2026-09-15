@@ -60,6 +60,16 @@
 			<scope>runtime</scope>
 		</dependency>
 
+		<!-- Flyway (migrations de schéma) -->
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
+
 		<!-- Lombok -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
@@ -78,6 +88,13 @@
 			<dependency>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+			</dependency>
+
+			<!-- Keycloak Admin API (gestion utilisateurs/rôles) -->
+			<dependency>
+				<groupId>org.keycloak</groupId>
+				<artifactId>keycloak-admin-client</artifactId>
+				<version>26.0.7</version>
 			</dependency>
 
 		<!-- MapStruct (mapping entité <-> DTO) -->

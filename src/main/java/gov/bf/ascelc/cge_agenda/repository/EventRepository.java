@@ -10,7 +10,9 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,15 +39,53 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     @Query("SELECT e FROM Event e WHERE YEAR(e.startDate) = :year ORDER BY e.startDate DESC")
     List<Event> findByYear(@Param("year") int year);
 
-    @Query("SELECT e FROM Event e " +
-            "LEFT JOIN FETCH e.participantEvents pe " +
-            "LEFT JOIN FETCH pe.participant " +
+    // PostgreSQL interdit un ORDER BY sur des expressions absentes du SELECT
+    // quand la requête est DISTINCT (contrairement à H2, utilisé en test).
+    // On calcule donc l'ordre sur une requête simple (sans jointure ni DISTINCT),
+    // puis on charge les associations en une seconde requête, avant de
+    // recombiner en mémoire dans l'ordre calculé.
+    @Query("SELECT e.id FROM Event e WHERE e.deleted = false " +
             "ORDER BY " +
             "CASE e.status WHEN 'EN_COURS' THEN 1 WHEN 'PLANIFIE' THEN 2 WHEN 'REPORTER' THEN 3 WHEN 'TERMINE' THEN 4 WHEN 'ANNULE' THEN 5 ELSE 6 END ASC, " +
             "CASE WHEN e.startDate >= CURRENT_DATE THEN 0 ELSE 1 END ASC, " +
             "CASE WHEN e.startDate >= CURRENT_DATE THEN e.startDate END ASC, " +
             "e.startDate DESC")
-    List<Event> findAllWithParticipantsOrderedByStatusAndProximity();
+    List<UUID> findNonDeletedIdsOrderedByStatusAndProximity();
+
+    @Query("SELECT e.id FROM Event e WHERE e.deleted = true ORDER BY e.updatedAt DESC")
+    List<UUID> findDeletedIdsOrderedByUpdatedAt();
+
+    // Pas de DISTINCT ici : avec plusieurs LEFT JOIN FETCH sur des collections,
+    // Hibernate ajoute un ORDER BY implicite pour assembler les collections,
+    // ce que PostgreSQL refuse en présence de DISTINCT (l'expression du ORDER BY
+    // n'apparaît pas dans la liste SELECT). Le doublonnage issu du produit
+    // cartésien des jointures est de toute façon éliminé ci-dessous via la Map.
+    @Query("SELECT e FROM Event e " +
+            "LEFT JOIN FETCH e.participantEvents pe " +
+            "LEFT JOIN FETCH pe.participant " +
+            "LEFT JOIN FETCH e.schedules " +
+            "LEFT JOIN FETCH e.files " +
+            "WHERE e.id IN :ids")
+    List<Event> findByIdInWithParticipants(@Param("ids") List<UUID> ids);
+
+    private static List<Event> loadOrdered(EventRepository self, List<UUID> orderedIds) {
+        if (orderedIds.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, Event> byId = new LinkedHashMap<>();
+        for (Event e : self.findByIdInWithParticipants(orderedIds)) {
+            byId.put(e.getId(), e);
+        }
+        return orderedIds.stream().map(byId::get).toList();
+    }
+
+    default List<Event> findAllWithParticipantsOrderedByStatusAndProximity() {
+        return loadOrdered(this, findNonDeletedIdsOrderedByStatusAndProximity());
+    }
+
+    default List<Event> findAllDeleted() {
+        return loadOrdered(this, findDeletedIdsOrderedByUpdatedAt());
+    }
 
     @Query("SELECT e FROM Event e WHERE " +
             "(:keyword IS NULL OR LOWER(e.title) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(e.description) LIKE LOWER(CONCAT('%', :keyword, '%'))) AND " +
@@ -76,4 +116,6 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     List<Event> findEventsByParticipantId(@Param("participantId") UUID participantId);
 
     List<Event> findByStartDateAndStatus(LocalDate startDate, EventStatus status);
+
+    List<Event> findByStatusAndEcheanceValidationIsNotNull(EventStatus status);
 }

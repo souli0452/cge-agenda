@@ -1,6 +1,7 @@
 
 package gov.bf.ascelc.cge_agenda.security;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -17,7 +18,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
 
 import static gov.bf.ascelc.cge_agenda.utils.Constant.ROLE_ADMIN;
-import static gov.bf.ascelc.cge_agenda.utils.Constant.ROLE_USER;
+import static gov.bf.ascelc.cge_agenda.utils.Constant.ROLE_CGE;
+import static gov.bf.ascelc.cge_agenda.utils.Constant.ROLE_SECRETAIRE;
+import static gov.bf.ascelc.cge_agenda.utils.Constant.ROLE_PROTOCOLE;
+import static gov.bf.ascelc.cge_agenda.utils.Constant.ROLE_DIRECTEUR_CABINET;
 
 @Configuration
 @EnableWebSecurity
@@ -25,6 +29,9 @@ import static gov.bf.ascelc.cge_agenda.utils.Constant.ROLE_USER;
 public class SecurityConfig {
 
     private final JwtAuthConverter jwtAuthConverter;
+
+    @Value("${app.cors.allowed-origins:http://localhost:4200,http://localhost:3000}")
+    private String corsAllowedOrigins;
 
     public SecurityConfig(JwtAuthConverter jwtAuthConverter) {
         this.jwtAuthConverter = jwtAuthConverter;
@@ -49,24 +56,85 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/**").hasRole(ROLE_ADMIN)
 
                         // ==========================================
-                        // USER & ADMIN - Écriture (POST/PUT/PATCH)
+                        // WORKFLOW DE VALIDATION - tous rôles métier (le vrai contrôle est
+                        // désormais "êtes-vous le chef de l'espace de cet événement ?",
+                        // vérifié en service — EventServiceImpl.assertEstValidateur — pas
+                        // par rôle Keycloak, puisque le chef peut avoir n'importe quel rôle)
                         // ==========================================
-                        .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/event/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/cge-agenda/event/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/cge-agenda/event/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
-                        .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/participant/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/cge-agenda/participant/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
-                        .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/file/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/cge-agenda/event/validate/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/cge-agenda/event/reject/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/cge-agenda/event/request-changes/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/cge-agenda/event/delegate/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/cge-agenda/event/*/observation")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/cge-agenda/event/*/demander-delegation")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
 
                         // ==========================================
-                        // LECTURE - Tous les utilisateurs authentifiés
+                        // DÉLÉGATION — liens signés cliqués depuis l'email, sans authentification
                         // ==========================================
-                        .requestMatchers(HttpMethod.GET, "/api/**").hasAnyRole(ROLE_USER, ROLE_ADMIN)
+                        .requestMatchers("/api/v1/cge-agenda/delegation/**").permitAll()
 
                         // ==========================================
-                        // EXPORT PDF - Nécessite authentification
+                        // ESPACE-MEMBRE — lien signé d'invitation, sans authentification
                         // ==========================================
-                        .requestMatchers("/api/v1/cge-agenda/events/export").hasAnyRole(ROLE_USER, ROLE_ADMIN)
+                        .requestMatchers("/api/v1/cge-agenda/espace-membre/**").permitAll()
+
+                        // ==========================================
+                        // ESPACES — gestion des gestionnaires par le propriétaire (vérifié en
+                        // service), création/suppression d'espace réservée à ADMIN via /admin/espaces
+                        // ==========================================
+                        .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/espaces/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/cge-agenda/espaces/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+
+                        // ==========================================
+                        // ÉCRITURE - Tous les rôles métier authentifiés (POST/PUT/PATCH)
+                        // ==========================================
+                        .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/event/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/cge-agenda/event/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/cge-agenda/event/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/participant/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/cge-agenda/participant/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/file/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/cge-agenda/schedule/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/cge-agenda/schedule/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+
+                        // ==========================================
+                        // STATISTIQUES - ADMIN/CGE/DIRECTEUR_CABINET seulement
+                        // (règle spécifique, évaluée avant la règle GET générique ci-dessous)
+                        // ==========================================
+                        .requestMatchers(HttpMethod.GET, "/api/v1/cge-agenda/stats/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_DIRECTEUR_CABINET)
+
+                        // ==========================================
+                        // LECTURE - Tous les rôles métier authentifiés
+                        // ==========================================
+                        .requestMatchers(HttpMethod.GET, "/api/**")
+                                .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
+
+                        // ==========================================
+                        // JOURNAL D'AUDIT - ADMIN seulement
+                        // ==========================================
+                        .requestMatchers("/api/v1/cge-agenda/audit/**").hasRole(ROLE_ADMIN)
+
+                        // ==========================================
+                        // ADMINISTRATION (utilisateurs/rôles) - ADMIN seulement
+                        // ==========================================
+                        .requestMatchers("/api/v1/cge-agenda/admin/**").hasRole(ROLE_ADMIN)
 
                         // ==========================================
                         // PAR DÉFAUT - Authentifié requis
@@ -80,7 +148,7 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:4200", "http://localhost:3000"));
+        configuration.setAllowedOrigins(Arrays.asList(corsAllowedOrigins.split(",")));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Disposition"));
