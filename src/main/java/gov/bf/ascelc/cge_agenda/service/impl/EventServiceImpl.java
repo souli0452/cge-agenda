@@ -1529,11 +1529,10 @@ public class EventServiceImpl implements EventService {
                 new com.itextpdf.layout.element.Table(
                         UnitValue.createPercentArray(new float[]{35, 30, 35}));
         t.setWidth(UnitValue.createPercentValue(100));
-        DeviceRgb bc = new DeviceRgb(150, 150, 150);
 
         com.itextpdf.layout.element.Cell left =
                 new com.itextpdf.layout.element.Cell()
-                        .setBorder(new SolidBorder(bc, 1)).setPadding(10)
+                        .setBorder(Border.NO_BORDER).setPadding(10)
                         .setVerticalAlignment(VerticalAlignment.MIDDLE);
         left.add(new Paragraph()
                 .add(new Text("AUTORITE SUPERIEURE DE\n").setFont(bold).setFontSize(9))
@@ -1571,7 +1570,7 @@ public class EventServiceImpl implements EventService {
 
         com.itextpdf.layout.element.Cell right =
                 new com.itextpdf.layout.element.Cell()
-                        .setBorder(new SolidBorder(bc, 1)).setPadding(10)
+                        .setBorder(Border.NO_BORDER).setPadding(10)
                         .setVerticalAlignment(VerticalAlignment.MIDDLE);
         right.add(new Paragraph()
                 .add(new Text("BURKINA FASO\n").setFont(bold).setFontSize(11))
