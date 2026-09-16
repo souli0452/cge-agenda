@@ -1,5 +1,8 @@
 HELP.md
 
+# Secrets locaux (jamais commités)
+application-secrets.properties
+
 # Maven
 target/
 .mvn/wrapper/maven-wrapper.jar
@@ -36,6 +39,13 @@ build/
 
 ### VS Code ###
 .vscode/
+
 # Superpowers (outillage de session, pas du code)
 .superpowers/
 docs/superpowers/
+.worktrees/
+
+backups/
+
+# Secrets de déploiement Docker (voir .env.example)
+.env

@@ -2,6 +2,7 @@ package gov.bf.ascelc.cge_agenda.exception;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -90,6 +91,23 @@ public class GlobalExceptionHandler {
     }
 
     // ==========================================
+    // CONFLIT DE VERSION (verrou optimiste)
+    // ==========================================
+    /**
+     * Deux utilisateurs ont modifié le même événement en même temps.
+     * Le second à enregistrer reçoit un 409 et doit recharger la fiche.
+     */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLocking(ObjectOptimisticLockingFailureException ex) {
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.CONFLICT.value(),
+                "Cet événement a été modifié entre-temps par quelqu'un d'autre. Veuillez recharger la page avant de réessayer.",
+                LocalDateTime.now()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
+
+    // ==========================================
     // CONTRAINTES BASE DE DONNÉES (Clés uniques, etc.)
     // ==========================================
     /**
@@ -135,9 +153,10 @@ public class GlobalExceptionHandler {
     // ==========================================
     @ExceptionHandler(IOException.class)
     public ResponseEntity<ErrorResponse> handleIOException(IOException ex) {
+        log.error("❌ IOException : {}", ex.getMessage(), ex);
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "Erreur lors de la manipulation du fichier : " + ex.getMessage(),
+                "Erreur lors de la manipulation du fichier",
                 LocalDateTime.now()
         );
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
@@ -148,9 +167,10 @@ public class GlobalExceptionHandler {
     // ==========================================
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
+        log.warn("⚠ IllegalArgumentException : {}", ex.getMessage());
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.BAD_REQUEST.value(),
-                "Paramètre invalide : " + ex.getMessage(),
+                "Paramètre invalide",
                 LocalDateTime.now()
         );
         return ResponseEntity.badRequest().body(error);
@@ -168,6 +188,29 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now()
         );
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    }
+
+    // ==========================================
+    // REJET PAR KEYCLOAK (mot de passe, requête invalide)
+    // ==========================================
+    /**
+     * Le client admin Keycloak leve cette exception (sans corps exploitable de
+     * facon fiable) quand une requete est rejetee en 400 - le cas le plus
+     * frequent en pratique est un mot de passe qui ne respecte pas la
+     * politique de securite du realm (resetPassword/setPassword). Sans ce
+     * handler, l'appelant recoit un 500 generique qui masque totalement la
+     * vraie cause.
+     */
+    @ExceptionHandler(jakarta.ws.rs.BadRequestException.class)
+    public ResponseEntity<ErrorResponse> handleKeycloakBadRequest(jakarta.ws.rs.BadRequestException ex) {
+        log.warn("⚠ Requete rejetee par Keycloak : {}", ex.getMessage());
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                "Demande rejetée : vérifiez que le mot de passe respecte la politique de sécurité "
+                        + "(8 caractères minimum, une majuscule, un chiffre et un caractère spécial).",
+                LocalDateTime.now()
+        );
+        return ResponseEntity.badRequest().body(error);
     }
 
     // ==========================================

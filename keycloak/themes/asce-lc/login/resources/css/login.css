@@ -1,0 +1,351 @@
+/* ============================================================
+   CGE AGENDA — ASCE-LC  |  Login theme v7 — panneau encadré
+   ============================================================ */
+
+:root {
+  --green:    #009640;
+  --g-mid:    #008539;
+  --g-dark:   #006e2f;
+  --g-darker: #003416;
+  --g-darkest:#001d0c;
+  --gold:   #f2c14e;
+  --white:  #ffffff;
+  --bg:     #eef0f4;
+  --text:   #0f172a;
+  --muted:  #64748b;
+  --border: #dde3ec;
+  --r:      24px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  font-family: 'Segoe UI', Inter, system-ui, sans-serif !important;
+}
+
+body {
+  min-height: 100vh !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: var(--bg) !important;
+  padding: 24px !important;
+}
+
+/* ── Neutraliser les enveloppes PatternFly qui n'ont pas besoin de style ── */
+.pf-v5-c-page,
+.pf-v5-c-login {
+  all: unset !important;
+  display: contents !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CARTE — panneau de marque + formulaire côte à côte
+   ══════════════════════════════════════════════════════════════ */
+.pf-v5-c-login__container {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
+  column-gap: 0 !important;
+  row-gap: 0 !important;
+  grid-column-gap: 0 !important;
+  padding: 0 !important;
+  padding-inline-start: 0 !important;
+  padding-inline-end: 0 !important;
+  width: 100% !important;
+  max-width: 900px !important;
+  background: var(--white) !important;
+  border-radius: var(--r) !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 20px 60px rgba(0,0,0,0.12) !important;
+  overflow: hidden !important;
+}
+
+/* ── Masquer les éléments non voulus ── */
+#kc-header,
+#kc-header-wrapper,
+.pf-v5-c-login__header,
+.pf-v5-c-login__main-header,
+#kc-locale,
+.kc-locale-dropdown,
+[id="kc-locale"],
+[id*="locale"],
+select[name="locale"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+.pf-v5-c-login__main-footer:empty { display: none !important; }
+
+/* ══════════════════════════════════════════════════════════════
+   PANNEAU DE MARQUE
+   ══════════════════════════════════════════════════════════════ */
+.asce-brand-panel {
+  flex: 0 0 42% !important;
+  position: relative !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  padding: 36px 40px 28px !important;
+  background: linear-gradient(170deg, var(--g-dark) 0%, var(--g-darker) 55%, var(--g-darkest) 100%) !important;
+  color: var(--white) !important;
+}
+
+/* Silhouette de loupe en filigrane */
+.asce-brand-panel::before {
+  content: '';
+  position: absolute;
+  right: -140px;
+  bottom: -110px;
+  width: 440px;
+  height: 440px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Ccircle cx='82' cy='82' r='58' fill='none' stroke='white' stroke-width='9'/%3E%3Cline x1='124' y1='124' x2='178' y2='178' stroke='white' stroke-width='16' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center / contain;
+  opacity: 0.09;
+  transform: rotate(-14deg);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.asce-brand-top,
+.asce-brand-mid,
+.asce-brand-copyright {
+  position: relative;
+  z-index: 1;
+}
+
+.asce-brand-top {
+  display: flex;
+  justify-content: center;
+}
+
+.asce-brand-logo {
+  width: 150px;
+  height: auto;
+  display: block;
+}
+
+.asce-brand-star {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin-bottom: 14px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2l2.9 6.9L22 9.6l-5.5 5 1.6 7.4L12 18.6 5.9 22l1.6-7.4L2 9.6l7.1-.7L12 2z' fill='%23f2c14e'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+
+.asce-brand-tagline {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.4px;
+  margin-bottom: 14px;
+}
+
+.asce-brand-features {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: rgba(255,255,255,0.45);
+}
+
+.asce-brand-copyright {
+  font-size: 11px;
+  color: rgba(255,255,255,0.25);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FORMULAIRE
+   ══════════════════════════════════════════════════════════════ */
+.pf-v5-c-login__main {
+  flex: 1 1 58% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  padding: 48px 44px !important;
+  background: var(--white) !important;
+}
+
+.pf-v5-c-login__main-body {
+  width: 100% !important;
+  max-width: 420px !important;
+  margin: 0 auto !important;
+}
+
+.asce-login-heading { margin-bottom: 26px; }
+
+.asce-login-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.4px;
+  margin-bottom: 6px;
+}
+
+.asce-login-subtitle {
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* ── Labels ── */
+.pf-v5-c-form__group { margin-bottom: 16px !important; }
+
+.pf-v5-c-form__label {
+  display: block !important;
+  margin-bottom: 7px !important;
+}
+
+.pf-v5-c-form__label-text {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #334155 !important;
+}
+
+.pf-v5-c-form__label-required {
+  color: #dc2626 !important;
+  margin-left: 3px !important;
+}
+
+/* ── Champs : neutraliser le wrapper PatternFly, styliser le vrai <input> ──
+   (le bug de "boîte dans la boîte" venait du fait que ce wrapper gardait
+   son style par défaut pendant qu'on stylisait l'input à l'intérieur) */
+.pf-v5-c-form-control {
+  all: unset !important;
+  display: block !important;
+  position: relative !important;
+  width: 100% !important;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"] {
+  width: 100% !important;
+  height: 48px !important;
+  background: #f8fafc !important;
+  border: 1.5px solid var(--border) !important;
+  border-radius: 10px !important;
+  padding: 0 44px 0 14px !important;
+  font-size: 14px !important;
+  color: var(--text) !important;
+  transition: border-color .18s, box-shadow .18s, background .18s !important;
+}
+input[type="text"]:hover,
+input[type="password"]:hover { border-color: #b0bec5 !important; background: #f1f5f9 !important; }
+
+input#username {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 14px center !important;
+  background-size: 18px !important;
+}
+
+input:focus {
+  background: var(--white) !important;
+  border-color: var(--green) !important;
+  box-shadow: 0 0 0 3px rgba(0,150,64,.15) !important;
+  outline: none !important;
+}
+
+/* ── Bouton de visibilité du mot de passe (icône œil déjà native) ── */
+.pf-v5-c-input-group { align-items: center !important; gap: 8px !important; }
+.pf-v5-c-button.pf-m-control {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  color: #94a3b8 !important;
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+}
+.pf-v5-c-button.pf-m-control:focus { outline: none !important; box-shadow: 0 0 0 3px rgba(0,150,64,.15) !important; }
+.pf-v5-c-button.pf-m-control:hover { background: #f1f5f9 !important; color: var(--muted) !important; }
+
+/* ── Options (case à cocher + mot de passe oublié) ──
+   .pf-v5-c-helper-text est déjà display:flex + justify-content:space-between
+   via les classes utilitaires PatternFly (kcInputHelperTextClass) : on ne
+   redéclare pas display/justify-content ici, seulement l'espacement. */
+.pf-v5-c-helper-text {
+  margin: 14px 0 22px !important;
+  align-items: center !important;
+}
+.pf-v5-c-check__label {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  color: var(--muted) !important;
+}
+
+/* ── Bouton principal ── */
+#kc-login {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  width: 100% !important;
+  background: var(--green) !important;
+  border: none !important;
+  border-radius: 10px !important;
+  padding: 14px 20px !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: var(--white) !important;
+  cursor: pointer !important;
+  letter-spacing: .3px !important;
+  box-shadow: 0 4px 18px rgba(0,150,64,.28) !important;
+  transition: background .18s, transform .14s, box-shadow .18s !important;
+}
+#kc-login::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+#kc-login:hover {
+  background: var(--g-mid) !important;
+  box-shadow: 0 6px 24px rgba(0,150,64,.40) !important;
+  transform: translateY(-1px) !important;
+}
+#kc-login:active { background: var(--g-dark) !important; transform: translateY(0) !important; }
+
+/* ── Liens ── */
+a { color: var(--green) !important; font-size: 13px !important; font-weight: 600 !important; text-decoration: none !important; }
+a:hover { color: var(--g-dark) !important; text-decoration: underline !important; }
+
+/* ── Lien d'inscription ── */
+#kc-info {
+  margin-top: 18px !important;
+  padding-top: 16px !important;
+  border-top: 1px solid var(--border) !important;
+  text-align: center !important;
+  font-size: 13px !important;
+  color: var(--muted) !important;
+}
+
+/* ── Erreurs ── */
+.pf-v5-c-alert.pf-m-danger, .alert.alert-error, #input-error {
+  background: #fff8f8 !important;
+  border: 1.5px solid #fca5a5 !important;
+  border-radius: 10px !important;
+  color: #dc2626 !important;
+  padding: 11px 15px !important;
+  margin-bottom: 16px !important;
+  font-size: 13px !important;
+}
+
+/* ── Mobile ── */
+@media (max-width: 800px) {
+  body { padding: 0 !important; align-items: flex-start !important; }
+  .pf-v5-c-login__container {
+    flex-direction: column !important;
+    max-width: 100% !important;
+    border-radius: 0 !important;
+    min-height: 100vh !important;
+  }
+  .asce-brand-panel { flex: 0 0 auto !important; padding: 28px 28px 22px !important; }
+  .asce-brand-panel::before { width: 260px; height: 260px; right: -80px; bottom: -70px; }
+  .asce-brand-tagline { font-size: 22px; }
+  .pf-v5-c-login__main { padding: 32px 24px !important; }
+}

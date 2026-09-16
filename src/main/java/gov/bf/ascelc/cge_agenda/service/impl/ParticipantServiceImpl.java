@@ -8,7 +8,12 @@ import gov.bf.ascelc.cge_agenda.repository.ParticipantRepository;
 import gov.bf.ascelc.cge_agenda.service.ParticipantService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -80,7 +85,7 @@ public class ParticipantServiceImpl implements ParticipantService {
     @Transactional(readOnly = true)
     public List<ParticipantDto> findAll() {
         log.info("Récupération de tous les participants");
-        return participantMapper.toDtos(participantRepository.findAll());
+        return participantMapper.toDtos(participantRepository.findByDeletedFalse());
     }
 
     @Override
@@ -98,17 +103,19 @@ public class ParticipantServiceImpl implements ParticipantService {
 
     @Override
     public void delete(UUID id) {
-        log.info("Suppression du participant : ID = {}", id);
+        log.info("Mise à la corbeille du participant : ID = {}", id);
 
-        if (!participantRepository.existsById(id)) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Participant non trouvé avec l'ID : " + id
-            );
-        }
+        Participant participant = participantRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Participant non trouvé avec l'ID : " + id
+                ));
 
-        participantRepository.deleteById(id);
-        log.info("Participant supprimé avec succès");
+        participant.setDeleted(true);
+        participant.setDeletedAt(LocalDateTime.now());
+        participant.setDeletedBy(currentUserIdentity());
+        participantRepository.save(participant);
+        log.info("Participant mis à la corbeille avec succès");
     }
 
     @Override
@@ -116,7 +123,7 @@ public class ParticipantServiceImpl implements ParticipantService {
     public List<ParticipantDto> findByType(ParticipantType type) {
         log.info("Recherche des participants par type : {}", type);
         return participantMapper.toDtos(
-                participantRepository.findByParticipantType(type)
+                participantRepository.findByParticipantTypeAndDeletedFalse(type)
         );
     }
 
@@ -132,5 +139,55 @@ public class ParticipantServiceImpl implements ParticipantService {
         return participantMapper.toDtos(
                 participantRepository.searchByName(search.trim())
         );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ParticipantDto> findPaged(String keyword, ParticipantType type, Pageable pageable) {
+        return participantRepository
+                .findFiltered(keyword, type, pageable)
+                .map(participantMapper::toDto);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ParticipantDto> getCorbeille() {
+        return participantMapper.toDtos(participantRepository.findAllDeleted());
+    }
+
+    @Override
+    public ParticipantDto restore(UUID id) {
+        log.info("Restauration du participant : ID = {}", id);
+        Participant participant = participantRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Participant non trouvé avec l'ID : " + id
+                ));
+
+        participant.setDeleted(false);
+        participant.setDeletedAt(null);
+        participant.setDeletedBy(null);
+        return participantMapper.toDto(participantRepository.save(participant));
+    }
+
+    @Override
+    public void deletePermanently(UUID id) {
+        log.info("Suppression définitive du participant : ID = {}", id);
+        if (!participantRepository.existsById(id)) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Participant non trouvé avec l'ID : " + id
+            );
+        }
+        participantRepository.deleteById(id);
+    }
+
+    private String currentUserIdentity() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+            String email = jwt.getClaim("email");
+            return email != null ? email : jwt.getClaim("preferred_username");
+        }
+        return null;
     }
 }

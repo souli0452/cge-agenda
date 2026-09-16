@@ -63,6 +63,10 @@ public class PdfServiceImpl implements PdfService {
     private static final DeviceRgb COLOR_TERMINE   = new DeviceRgb(102, 187, 106);
     private static final DeviceRgb COLOR_ANNULER   = new DeviceRgb(239, 83,  80);
     private static final DeviceRgb COLOR_REPORTER  = new DeviceRgb(171, 71,  188);
+    private static final DeviceRgb COLOR_BROUILLON             = new DeviceRgb(158, 158, 158);
+    private static final DeviceRgb COLOR_EN_ATTENTE_VALIDATION = new DeviceRgb(255, 152, 0);
+    private static final DeviceRgb COLOR_A_CORRIGER            = new DeviceRgb(239, 83,  80);
+    private static final DeviceRgb COLOR_REJETE                = new DeviceRgb(198, 40,  40);
 
     // Formatters
     private static final DateTimeFormatter DATE_FMT  =
@@ -488,6 +492,10 @@ public class PdfServiceImpl implements PdfService {
             case TERMINE  -> COLOR_TERMINE;
             case ANNULER  -> COLOR_ANNULER;
             case REPORTER -> COLOR_REPORTER;
+            case BROUILLON             -> COLOR_BROUILLON;
+            case EN_ATTENTE_VALIDATION -> COLOR_EN_ATTENTE_VALIDATION;
+            case A_CORRIGER            -> COLOR_A_CORRIGER;
+            case REJETE                -> COLOR_REJETE;
         };
     }
 
@@ -499,6 +507,10 @@ public class PdfServiceImpl implements PdfService {
             case TERMINE  -> "Terminé";
             case ANNULER  -> "Annulé";
             case REPORTER -> "Reporté";
+            case BROUILLON             -> "Brouillon";
+            case EN_ATTENTE_VALIDATION -> "En attente de validation";
+            case A_CORRIGER            -> "À corriger";
+            case REJETE                -> "Rejeté";
         };
     }
 
@@ -511,7 +523,7 @@ public class PdfServiceImpl implements PdfService {
             case SEMINAIRE  -> "Séminaire";
             case FORMATION  -> "Formation";
             case MISSION    -> "Mission";
-            case AUDIANCE   -> "Audience";
+            case AUDIENCE   -> "Audience";
             case AUTRE      -> "Autre";
         };
     }
@@ -520,7 +532,142 @@ public class PdfServiceImpl implements PdfService {
     // MÉTHODES NON UTILISÉES — IMPLÉMENTÉES VIDES
     // ==========================================
     @Override public byte[] generateCalendarPDF(int year, int month)         { return new byte[0]; }
-    @Override public byte[] generateMeetingReportPDF(UUID eventId)            { return new byte[0]; }
+
+    // ==========================================
+    // COMPTE-RENDU OFFICIEL DE RÉUNION
+    // ==========================================
+    @Override
+    public byte[] generateMeetingReportPDF(UUID eventId) {
+        EventDto event = eventService.getEventById(eventId);
+
+        if (event.getCompteRenduPoints() == null
+                && event.getCompteRenduDecisions() == null
+                && event.getCompteRenduActions() == null) {
+            throw new RuntimeException("Aucun compte-rendu rédigé pour cet événement");
+        }
+
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            PdfDocument pdfDoc = new PdfDocument(new PdfWriter(baos));
+            Document doc = new Document(pdfDoc, PageSize.A4);
+            doc.setMargins(30, 35, 30, 35);
+
+            PdfFont bold   = PdfFontFactory.createFont(StandardFonts.HELVETICA_BOLD);
+            PdfFont normal = PdfFontFactory.createFont(StandardFonts.HELVETICA);
+            PdfFont italic = PdfFontFactory.createFont(StandardFonts.HELVETICA_OBLIQUE);
+
+            addInstitutionalHeader(doc, bold, normal,
+                    "Compte-rendu de réunion", event.getTitle(), 1);
+
+            addMeetingInfo(doc, event, bold, normal);
+            addMeetingParticipants(doc, event, bold, normal);
+            addMeetingSection(doc, "Points discutés", event.getCompteRenduPoints(), bold, normal);
+            addMeetingSection(doc, "Décisions prises", event.getCompteRenduDecisions(), bold, normal);
+            addMeetingSection(doc, "Actions à suivre", event.getCompteRenduActions(), bold, normal);
+            addMeetingSignature(doc, event, normal, italic);
+
+            addFooter(doc, pdfDoc, normal, italic);
+
+            doc.close();
+            log.info("✅ Compte-rendu PDF généré : {}", eventId);
+            return baos.toByteArray();
+
+        } catch (Exception e) {
+            log.error("❌ Erreur génération compte-rendu : {}", e.getMessage(), e);
+            throw new RuntimeException("Erreur génération compte-rendu", e);
+        }
+    }
+
+    private void addMeetingInfo(Document doc, EventDto event, PdfFont bold, PdfFont normal) {
+        Table info = new Table(UnitValue.createPercentArray(new float[]{28, 72}))
+                .setWidth(UnitValue.createPercentValue(100)).setMarginBottom(14);
+
+        info.addCell(infoLabelCell("Type de réunion", bold));
+        info.addCell(infoValueCell(getTypeLabel(event.getType()), normal));
+
+        String dates = event.getStartDate().format(DATE_FMT);
+        if (!event.getStartDate().equals(event.getEndDate())) {
+            dates += " au " + event.getEndDate().format(DATE_FMT);
+        }
+        info.addCell(infoLabelCell("Date", bold));
+        info.addCell(infoValueCell(dates, normal));
+
+        String lieu = "";
+        if (event.getVille() != null) lieu += event.getVille();
+        if (event.getPays()  != null) {
+            if (!lieu.isEmpty()) lieu += ", ";
+            lieu += event.getPays();
+        }
+        info.addCell(infoLabelCell("Lieu", bold));
+        info.addCell(infoValueCell(lieu.isEmpty() ? "—" : lieu, normal));
+
+        doc.add(info);
+    }
+
+    private Cell infoLabelCell(String text, PdfFont font) {
+        return new Cell().add(new Paragraph(text).setFont(font).setFontSize(10).setFontColor(COLOR_PRIMARY_DARK))
+                .setBorder(Border.NO_BORDER).setPadding(4);
+    }
+
+    private Cell infoValueCell(String text, PdfFont font) {
+        return new Cell().add(new Paragraph(text).setFont(font).setFontSize(10).setFontColor(COLOR_TEXT_DARK))
+                .setBorder(Border.NO_BORDER).setPadding(4);
+    }
+
+    private void addMeetingParticipants(Document doc, EventDto event, PdfFont bold, PdfFont normal) {
+        doc.add(new Paragraph("Participants")
+                .setFont(bold).setFontSize(11).setFontColor(COLOR_PRIMARY_DARK)
+                .setMarginBottom(6));
+
+        if (event.getParticipants() == null || event.getParticipants().isEmpty()) {
+            doc.add(new Paragraph("Aucun participant enregistré")
+                    .setFont(normal).setFontSize(9).setFontColor(COLOR_TEXT_MUTED)
+                    .setMarginBottom(14));
+            return;
+        }
+
+        String names = event.getParticipants().stream()
+                .map(p -> p.getFirstName() + " " + p.getLastName())
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("—");
+
+        doc.add(new Paragraph(names)
+                .setFont(normal).setFontSize(9.5f).setFontColor(COLOR_TEXT_DARK)
+                .setMarginBottom(14));
+    }
+
+    private void addMeetingSection(Document doc, String title, String content, PdfFont bold, PdfFont normal) {
+        doc.add(new Paragraph(title)
+                .setFont(bold).setFontSize(11).setFontColor(COLOR_WHITE)
+                .setBackgroundColor(COLOR_PRIMARY)
+                .setPadding(6)
+                .setMarginBottom(6));
+
+        doc.add(new Paragraph(content == null || content.isBlank() ? "—" : content)
+                .setFont(normal).setFontSize(10).setFontColor(COLOR_TEXT_DARK)
+                .setMarginBottom(16));
+    }
+
+    private void addMeetingSignature(Document doc, EventDto event, PdfFont normal, PdfFont italic) {
+        doc.add(new Paragraph("\n"));
+        Table sig = new Table(UnitValue.createPercentArray(new float[]{50, 50}))
+                .setWidth(UnitValue.createPercentValue(100));
+
+        sig.addCell(new Cell()
+                .add(new Paragraph("Rédigé par : " + (event.getCompteRenduRedigePar() != null ? event.getCompteRenduRedigePar() : "—"))
+                        .setFont(normal).setFontSize(9))
+                .setBorder(Border.NO_BORDER));
+
+        String dateStr = event.getCompteRenduDate() != null
+                ? event.getCompteRenduDate().toLocalDate().format(DATE_FMT)
+                : LocalDate.now().format(DATE_FMT);
+        sig.addCell(new Cell()
+                .add(new Paragraph("Fait le " + dateStr).setFont(italic).setFontSize(9))
+                .setBorder(Border.NO_BORDER).setTextAlignment(TextAlignment.RIGHT));
+
+        doc.add(sig);
+    }
+
     @Override public byte[] generateAttendanceSheet(UUID eventId)             { return new byte[0]; }
     @Override public byte[] generateMonthlyStatisticsReport(int y, int m)     { return new byte[0]; }
     @Override public byte[] generateSummaryReport(LocalDate s, LocalDate e)   { return new byte[0]; }

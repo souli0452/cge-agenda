@@ -1,0 +1,4 @@
+target
+backups
+uploads
+application-secrets.properties

@@ -1,4 +1,5 @@
 package gov.bf.ascelc.cge_agenda.security;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -14,6 +15,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+@Slf4j
 @Component
 public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationToken> {
     private final JwtGrantedAuthoritiesConverter jwtGrantedAuthoritiesConverter=new JwtGrantedAuthoritiesConverter();
@@ -26,10 +28,7 @@ public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationTo
                 extractResourceRoles(jwt).stream()
         ).collect(Collectors.toSet());
 
-        // LOG ICI : Affiche les autorités détectées dans la console
-        System.out.println("==================================================");
-        System.out.println("Autorités détectées : " + authorities);
-        System.out.println("==================================================");
+        log.debug("Autorités détectées : {}", authorities);
 
         return new JwtAuthenticationToken(jwt, authorities, jwt.getClaim("preferred_username"));
     }
