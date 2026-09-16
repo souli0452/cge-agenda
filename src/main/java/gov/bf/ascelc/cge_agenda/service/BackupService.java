@@ -3,7 +3,9 @@ package gov.bf.ascelc.cge_agenda.service;
 import gov.bf.ascelc.cge_agenda.dto.BackupConfigDto;
 import gov.bf.ascelc.cge_agenda.dto.BackupInfoDto;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface BackupService {
 
@@ -32,4 +34,11 @@ public interface BackupService {
      * excédant la rétention configurée. Appelé par le planificateur.
      */
     void runScheduledBackup();
+
+    /**
+     * Date/heure de la sauvegarde la plus récente (manuelle ou automatique),
+     * vide si aucune sauvegarde n'existe. Utilisé par le planificateur pour
+     * savoir si la sauvegarde du jour a déjà eu lieu.
+     */
+    Optional<LocalDateTime> lastBackupAt();
 }

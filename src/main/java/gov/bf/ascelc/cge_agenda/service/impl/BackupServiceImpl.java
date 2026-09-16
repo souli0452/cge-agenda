@@ -321,6 +321,19 @@ public class BackupServiceImpl implements BackupService {
         }
     }
 
+    @Override
+    public java.util.Optional<LocalDateTime> lastBackupAt() {
+        try (Stream<Path> files = Files.list(mainDir())) {
+            return files
+                    .filter(p -> p.toString().endsWith(".backup"))
+                    .map(this::lastModifiedSafe)
+                    .max(Comparator.naturalOrder());
+        } catch (IOException e) {
+            log.error("❌ Erreur lecture date de dernière sauvegarde : {}", e.getMessage());
+            return java.util.Optional.empty();
+        }
+    }
+
     private LocalDateTime lastModifiedSafe(Path p) {
         try {
             return LocalDateTime.ofInstant(Files.getLastModifiedTime(p).toInstant(), ZoneId.systemDefault());
