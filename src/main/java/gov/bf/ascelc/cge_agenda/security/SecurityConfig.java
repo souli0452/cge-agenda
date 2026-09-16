@@ -56,6 +56,19 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/**").hasRole(ROLE_ADMIN)
 
                         // ==========================================
+                        // JOURNAL D'AUDIT - ADMIN seulement
+                        // (doit être évalué avant la règle GET générique ci-dessous, sinon
+                        // elle est inatteignable : Spring Security retient la première
+                        // règle qui correspond, pas la plus précise)
+                        // ==========================================
+                        .requestMatchers("/api/v1/cge-agenda/audit/**").hasRole(ROLE_ADMIN)
+
+                        // ==========================================
+                        // ADMINISTRATION (utilisateurs/rôles) - ADMIN seulement
+                        // ==========================================
+                        .requestMatchers("/api/v1/cge-agenda/admin/**").hasRole(ROLE_ADMIN)
+
+                        // ==========================================
                         // WORKFLOW DE VALIDATION - tous rôles métier (le vrai contrôle est
                         // désormais "êtes-vous le chef de l'espace de cet événement ?",
                         // vérifié en service — EventServiceImpl.assertEstValidateur — pas
@@ -125,16 +138,6 @@ public class SecurityConfig {
                         // ==========================================
                         .requestMatchers(HttpMethod.GET, "/api/**")
                                 .hasAnyRole(ROLE_ADMIN, ROLE_CGE, ROLE_SECRETAIRE, ROLE_PROTOCOLE, ROLE_DIRECTEUR_CABINET)
-
-                        // ==========================================
-                        // JOURNAL D'AUDIT - ADMIN seulement
-                        // ==========================================
-                        .requestMatchers("/api/v1/cge-agenda/audit/**").hasRole(ROLE_ADMIN)
-
-                        // ==========================================
-                        // ADMINISTRATION (utilisateurs/rôles) - ADMIN seulement
-                        // ==========================================
-                        .requestMatchers("/api/v1/cge-agenda/admin/**").hasRole(ROLE_ADMIN)
 
                         // ==========================================
                         // PAR DÉFAUT - Authentifié requis
